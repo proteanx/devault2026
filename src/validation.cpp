@@ -20,6 +20,7 @@
 #include <consensus/tx_check.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <devault/budget.h>
 #include <dsproof/dsproof.h>
 #include <dsproof/storage.h>
 #include <flatfile.h>
@@ -1907,8 +1908,19 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state,
              nInputs <= 1 ? 0 : MILLI * (nTime3 - nTime2) / (nInputs - 1),
              nTimeConnect * MICRO, nTimeConnect * MILLI / nBlocksTotal);
 
-    Amount blockReward =
-        nFees + GetBlockSubsidy(pindex->nHeight, consensusParams);
+    // DeVault block reward = fees + Shark subsidy + cold reward + budget (see
+    // DEVAULT_HISTORICAL_CONSENSUS_RULESET.md and legacy DeVault validation.cpp:1934-1959).
+    const Amount nBlockSubsidy = GetBlockSubsidy(pindex->nHeight, consensusParams);
+    Amount nBudgetReward = Amount::zero();
+    Amount nColdReward = Amount::zero(); // TODO(1I): cold rewards (validated on non-superblocks)
+
+    // Budget [1H]: on a superblock, the coinbase must pay the hardcoded budget addresses exactly.
+    if (!CheckSuperBlockBudget(block, pindex->nHeight, nBlockSubsidy, params, nBudgetReward)) {
+        return state.DoS(100, error("ConnectBlock(): budget payout invalid"),
+                         REJECT_INVALID, "bad-cb-amount");
+    }
+
+    const Amount blockReward = nFees + nBlockSubsidy + nColdReward + nBudgetReward;
     if (block.vtx[0]->GetValueOut() > blockReward) {
         return state.DoS(100,
                          error("ConnectBlock(): coinbase pays too much "

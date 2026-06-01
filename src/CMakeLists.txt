@@ -555,6 +555,7 @@ add_library(server
   consensus/tokens.cpp
   consensus/tx_verify.cpp
   consensus/tx_check.cpp
+  devault/budget.cpp
   dsproof/dsproof.cpp
   dsproof/dsproof_create.cpp
   dsproof/dsproof_validate.cpp
