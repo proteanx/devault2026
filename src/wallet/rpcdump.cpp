@@ -4,9 +4,11 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chain.h>
+#include <chainparams.h>
 #include <config.h>
 #include <core_io.h>
 #include <interfaces/chain.h>
+#include <key.h>
 #include <key_io.h>
 #include <merkleblock.h>
 #include <node/blockstorage.h>
@@ -19,6 +21,7 @@
 #include <util/system.h>
 #include <util/time.h>
 #include <validation.h>
+#include <wallet/mnemonic.h>
 #include <wallet/rpcwallet.h>
 #include <wallet/wallet.h>
 
@@ -206,6 +209,153 @@ UniValue importprivkey(const Config &, const JSONRPCRequest &request) {
     }
 
     return UniValue();
+}
+
+// DeVault [2C]: restore an HD wallet from a BIP39 mnemonic. DeVault's HD wallet is standard
+// BIP39 + BIP32 + BIP44 (coin_type from chainparams ExtCoinType, mainnet 339). We derive
+// m/44'/coin'/account'/{0,1}/index with V2's own CExtKey (whose SetSeed == legacy SetMaster) and
+// import the resulting keys (mirroring importprivkey). Validation is lenient like legacy DeVault:
+// 12/24 dictionary words, BIP39 checksum NOT enforced.
+UniValue importmnemonic(const Config &config, const JSONRPCRequest &request) {
+    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
+    CWallet *const pwallet = wallet.get();
+    if (!EnsureWalletIsAvailable(pwallet, request.fHelp)) {
+        return UniValue();
+    }
+
+    if (request.fHelp || request.params.size() < 1 || request.params.size() > 6) {
+        throw std::runtime_error(
+            RPCHelpMan{"importmnemonic",
+                "\nRestore a DeVault HD wallet from a BIP39 mnemonic seed phrase. Derives the "
+                "standard DeVault BIP44 keys (m/44'/<coin_type>'/account'/{0,1}/index, mainnet "
+                "coin_type 339) and imports them, then optionally rescans the chain for history.\n"
+                "Like the legacy DeVault wallet, the BIP39 checksum is NOT enforced: any 12 or 24 "
+                "valid dictionary words are accepted. Requires a new wallet backup.\n",
+                {
+                    {"mnemonic", RPCArg::Type::STR, /* opt */ false, /* default_val */ "", "The 12- or 24-word seed phrase"},
+                    {"account", RPCArg::Type::NUM, /* opt */ true, /* default_val */ "0", "BIP44 account index (the account' level)"},
+                    {"count", RPCArg::Type::NUM, /* opt */ true, /* default_val */ "100", "Number of addresses to derive per chain (external + change)"},
+                    {"internal", RPCArg::Type::BOOL, /* opt */ true, /* default_val */ "true", "Also derive the internal (change) chain m/.../1/i"},
+                    {"rescan", RPCArg::Type::BOOL, /* opt */ true, /* default_val */ "true", "Rescan the wallet for transactions"},
+                    {"label", RPCArg::Type::STR, /* opt */ true, /* default_val */ "\"\"", "An optional address-book label"},
+                }}
+                .ToString() +
+            "\nNote: This call can take minutes if rescan is true.\n"
+            "\nExamples:\n" +
+            HelpExampleCli("importmnemonic", "\"word1 word2 ... word12\"") +
+            HelpExampleCli("importmnemonic", "\"word1 word2 ... word12\" 0 200 true false") +
+            HelpExampleRpc("importmnemonic", "\"word1 word2 ... word12\", 0, 100, true, true"));
+    }
+
+    if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+        throw JSONRPCError(RPC_WALLET_ERROR,
+                           "Cannot import private keys to a wallet with private keys disabled");
+    }
+
+    const std::string phrase = request.params[0].get_str();
+    const uint32_t account =
+        request.params[1].isNull() ? 0 : uint32_t(request.params[1].get_int());
+    const int count = request.params[2].isNull() ? 100 : request.params[2].get_int();
+    const bool internal =
+        request.params[3].isNull() ? true : request.params[3].get_bool();
+    const bool fRescan =
+        request.params[4].isNull() ? true : request.params[4].get_bool();
+    const std::string label =
+        request.params[5].isNull() ? "" : request.params[5].get_str();
+
+    if (count <= 0 || count > 100000) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "count must be between 1 and 100000");
+    }
+
+    // Validate + derive the 64-byte BIP39 seed (lenient: dictionary words + count, no checksum).
+    auto [valid, words, seed] = mnemonic::CheckSeedPhrase(phrase);
+    if (!valid) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
+                           "Invalid mnemonic: expected 12 or 24 valid BIP39 words");
+    }
+
+    const int coinType = config.GetChainParams().ExtCoinType();
+    std::string firstAddress;
+    int imported = 0;
+
+    WalletRescanReserver reserver(pwallet);
+    {
+        auto locked_chain = pwallet->chain().lock();
+        LOCK(pwallet->cs_wallet);
+        EnsureWalletIsUnlocked(pwallet);
+
+        if (fRescan && fPruneMode) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Rescan is disabled in pruned mode");
+        }
+        if (fRescan && !reserver.reserve()) {
+            throw JSONRPCError(RPC_WALLET_ERROR,
+                               "Wallet is currently rescanning. Abort existing rescan or wait.");
+        }
+
+        const uint32_t HARD = 0x80000000;
+        CExtKey master, purpose, coinKey, acctKey;
+        master.SetSeed(seed.data(), seed.size());
+        if (!master.Derive(purpose, 44 | HARD) ||
+            !purpose.Derive(coinKey, uint32_t(coinType) | HARD) ||
+            !coinKey.Derive(acctKey, account | HARD)) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "HD account derivation failed");
+        }
+
+        const int nChains = internal ? 2 : 1;
+        for (int chain = 0; chain < nChains; ++chain) {
+            CExtKey chainKey;
+            if (!acctKey.Derive(chainKey, uint32_t(chain))) {
+                throw JSONRPCError(RPC_WALLET_ERROR, "HD chain derivation failed");
+            }
+            for (int i = 0; i < count; ++i) {
+                CExtKey childKey;
+                if (!chainKey.Derive(childKey, uint32_t(i))) {
+                    continue;
+                }
+                const CKey key = childKey.key;
+                if (!key.IsValid()) {
+                    continue;
+                }
+                const CPubKey pubkey = key.GetPubKey();
+                const CKeyID keyid = pubkey.GetID();
+
+                if (chain == 0 && i == 0) {
+                    firstAddress = EncodeDestination(CTxDestination(keyid), config, false);
+                }
+                if (pwallet->HaveKey(keyid)) {
+                    continue;
+                }
+                pwallet->MarkDirty();
+                for (const auto &dest : GetAllDestinationsForKey(pubkey)) {
+                    pwallet->SetAddressBook(dest, label, "receive");
+                }
+                pwallet->LearnAllRelatedScripts(pubkey);
+                pwallet->UpdateTimeFirstKey(1);
+                pwallet->mapKeyMetadata[keyid].nCreateTime = 1;
+                pwallet->mapKeyMetadata[keyid].hdKeypath =
+                    strprintf("m/44'/%d'/%u'/%d/%d", coinType, account, chain, i);
+                if (!pwallet->AddKeyPubKey(key, pubkey)) {
+                    throw JSONRPCError(RPC_WALLET_ERROR, "Error adding key to wallet");
+                }
+                ++imported;
+            }
+        }
+    }
+    // The 64-byte seed is sensitive; wipe it now that the keys are derived.
+    memory_cleanse(seed.data(), seed.size());
+
+    if (fRescan) {
+        RescanWallet(*pwallet, reserver);
+    }
+
+    UniValue::Object ret;
+    ret.emplace_back("words", int(words.size()));
+    ret.emplace_back("account", int64_t(account));
+    ret.emplace_back("coin_type", coinType);
+    ret.emplace_back("keys_imported", imported);
+    ret.emplace_back("first_address", firstAddress);
+    ret.emplace_back("rescanned", fRescan);
+    return UniValue(std::move(ret));
 }
 
 UniValue abortrescan(const Config &, const JSONRPCRequest &request) {
@@ -1557,6 +1707,7 @@ static const ContextFreeRPCCommand commands[] = {
     { "wallet",             "dumpwallet",               dumpwallet,               {"filename"} },
     { "wallet",             "importmulti",              importmulti,              {"requests","options"} },
     { "wallet",             "importprivkey",            importprivkey,            {"privkey","label","rescan"} },
+    { "wallet",             "importmnemonic",           importmnemonic,           {"mnemonic","account","count","internal","rescan","label"} },
     { "wallet",             "importwallet",             importwallet,             {"filename"} },
     { "wallet",             "importaddress",            importaddress,            {"address","label","rescan","p2sh"} },
     { "wallet",             "importprunedfunds",        importprunedfunds,        {"rawtransaction","txoutproof"} },

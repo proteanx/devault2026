@@ -9,6 +9,7 @@ add_library(crypto
 	hmac_sha256.cpp
 	hmac_sha512.cpp
 	muhash.cpp
+	pkcs5_pbkdf2.cpp
 	ripemd160.cpp
 	sha1.cpp
 	sha256.cpp

@@ -237,6 +237,7 @@ public:
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xAD, 0xE4};
         cashaddrPrefix = "devault";
         cashaddrSecretPrefix = "dvtpriv";
+        nExtCoinType = 339; // DeVault [2C]: registered BIP44 coin_type (m/44'/339'/...)
 
         vFixedSeeds.clear(); // DeVault fixed seeds TBD; use -addnode for parity sync
 
@@ -420,6 +421,7 @@ public:
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
         cashaddrPrefix = "dvtest";
         cashaddrSecretPrefix = "testpriv";
+        nExtCoinType = 1; // DeVault [2C]: BIP44 coin_type for test networks
         vFixedSeeds.clear();
 
         fDefaultConsistencyChecks = false;
@@ -1131,6 +1133,7 @@ public:
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
         cashaddrPrefix = "dvreg";
         cashaddrSecretPrefix = "regpriv";
+        nExtCoinType = 1; // DeVault [2C]: BIP44 coin_type for test networks
     }
 };
 

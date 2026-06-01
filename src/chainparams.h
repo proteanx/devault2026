@@ -116,6 +116,8 @@ public:
     // DeVault: CashAddr-encoded WIF secret-key prefix (e.g. "dvtpriv"). Consumed by the
     // wallet WIF encode/decode in Phase 2 (dual-encode decision: cashaddr canonical + Base58 accepted).
     const std::string &CashAddrSecretPrefix() const { return cashaddrSecretPrefix; }
+    // DeVault [2C]: BIP44 coin_type for HD/mnemonic wallets (m/44'/<ExtCoinType>'/...). Mainnet 339.
+    int ExtCoinType() const { return nExtCoinType; }
     const std::vector<SeedSpec6> &FixedSeeds() const { return vFixedSeeds; }
     const CCheckpointData &Checkpoints() const { return checkpointData; }
     const ChainTxData &TxData() const { return chainTxData; }
@@ -134,6 +136,7 @@ protected:
     std::vector<uint8_t> base58Prefixes[MAX_BASE58_TYPES];
     std::string cashaddrPrefix;
     std::string cashaddrSecretPrefix;
+    int nExtCoinType = 0; // DeVault [2C]: BIP44 coin_type (m/44'/nExtCoinType'/...)
     std::string strNetworkID;
     CBlock genesis;
     std::vector<SeedSpec6> vFixedSeeds;

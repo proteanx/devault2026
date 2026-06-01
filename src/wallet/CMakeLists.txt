@@ -15,8 +15,10 @@ add_library(wallet
 	coinselection.cpp
 	crypter.cpp
 	db.cpp
+	dictionary.cpp
 	fees.cpp
 	init.cpp
+	mnemonic.cpp
 	psbtwallet.cpp
 	rpcdump.cpp
 	rpcwallet.cpp
