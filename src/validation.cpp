@@ -1001,16 +1001,23 @@ bool GetTransaction(const TxId &txid, CTransactionRef &txOut,
 }
 
 Amount GetBlockSubsidy(int nHeight, const Consensus::Params &consensusParams) {
-    int halvings = nHeight / consensusParams.nSubsidyHalvingInterval;
-    // Force block reward to zero when right shift is undefined.
-    if (halvings >= 64) {
-        return Amount::zero();
-    }
+    // DeVault "Shark" inflation curve (ported verbatim from legacy DeVault validation.cpp:904-920,
+    // replaces the BCH halving subsidy). Ramps up to a 1.5x peak at half a year, then decays ~1/height.
+    // Peak happens after 1/2 a year
+    const int64_t peakDiv = 2; // for 1/2 a year
+    const int64_t nPeakHeight = consensusParams.nBlocksPerYear / peakDiv;
+    const int64_t nInitialReward = consensusParams.nInitialMiningRewardInCoins;
+    const int64_t peak = nInitialReward + int(nInitialReward / peakDiv);
+    int64_t nReward;
 
-    Amount nSubsidy = 50 * COIN;
-    // Subsidy is cut in half every 210,000 blocks which will occur
-    // approximately every 4 years.
-    return ((nSubsidy / SATOSHI) >> halvings) * SATOSHI;
+    if (nHeight <= nPeakHeight) {
+        nReward = (nInitialReward) + int((2 * nInitialReward * nHeight) /
+                                         (3 * nPeakHeight + nHeight));
+    } else {
+        nReward = nPeakHeight * peak / nHeight;
+    }
+    Amount nSubsidy = nReward * COIN;
+    return nSubsidy;
 }
 
 bool IsInitialBlockDownload() {
