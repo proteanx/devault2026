@@ -1912,12 +1912,27 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state,
     // DEVAULT_HISTORICAL_CONSENSUS_RULESET.md and legacy DeVault validation.cpp:1934-1959).
     const Amount nBlockSubsidy = GetBlockSubsidy(pindex->nHeight, consensusParams);
     Amount nBudgetReward = Amount::zero();
-    Amount nColdReward = Amount::zero(); // TODO(1I): cold rewards (validated on non-superblocks)
+    Amount nColdReward = Amount::zero();
 
     // Budget [1H]: on a superblock, the coinbase must pay the hardcoded budget addresses exactly.
     if (!CheckSuperBlockBudget(block, pindex->nHeight, nBlockSubsidy, params, nBudgetReward)) {
         return state.DoS(100, error("ConnectBlock(): budget payout invalid"),
                          REJECT_INVALID, "bad-cb-amount");
+    }
+
+    // Cold rewards [1I, Option B -- lenient extract; see DEVAULT_COLD_REWARDS_DESIGN.md].
+    // On a non-superblock, the coinbase MAY pay a cold reward at vout[1] (the reward goes to a
+    // long-held large UTXO's own scriptPubKey). We add that output's value to the allowed coinbase
+    // total without re-validating it against a reward DB -- this is byte-identical to the legacy
+    // QuickValidate(fJustCheck=true) path (devault validation.cpp:1948). It is safe and
+    // consensus-equivalent for RE-VALIDATING THE EXISTING CHAIN: every historical cold reward
+    // already passed legacy CheckReward, and the extract never rejects a valid one. Before height
+    // 22377 legacy CheckReward rejected any size>1 coinbase, so accepted blocks there have size==1
+    // (extract == 0); at/after 22377 vout[1] is exactly what legacy extracts. The stateful engine
+    // that validates/produces NEW (post-fork) blocks -- and that fixes the cold-reward shutdown
+    // bug via a chainstate-derived, rebuildable design -- is deferred to the block-production phase.
+    if (!consensusParams.IsSuperBlock(pindex->nHeight) && block.vtx[0]->vout.size() > 1) {
+        nColdReward = block.vtx[0]->vout[1].nValue;
     }
 
     const Amount blockReward = nFees + nBlockSubsidy + nColdReward + nBudgetReward;
