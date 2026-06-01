@@ -252,6 +252,9 @@ public:
                 {110068, BlockHash::fromHex("00000000000000ab518cf852a114ff655ae01580d26727552a584c62bcf40726")},
                 {110420, BlockHash::fromHex("000000000000007edbec10fadbf144be667309ceb4eec9a377bb950716c4d4a1")},
                 {131502, BlockHash::fromHex("00000000000000161d9356272df6aa2c551738634ecb6b4a16b7c8a6bf62c14c")},
+                {1000000, BlockHash::fromHex("000000000000003e909eba597c683d4db683e0214875b399ad632b8be6e0c759")},
+                {1500000, BlockHash::fromHex("000000000000023a70bd0a31909c75c8c961678b199a5c9e815a48fbae9f6a46")},
+                {1696050, BlockHash::fromHex("0000000000002004569d6237faf25cbeb62e625bdb4bcb9450e2ca6d66ad1977")},
             }};
 
         // Data as of block
