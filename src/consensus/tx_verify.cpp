@@ -224,7 +224,10 @@ bool CheckTxInputs(const CTransaction &tx, CValidationState &state,
                       FormatMoney(value_out)));
     }
 
-    // Tally transaction fees
+    // Tally transaction fees. DeVault [1F]: nValueIn (UTXO/Coin values) and value_out
+    // (GetValueOut) are already spock-quantized -- see amount.h SpockQuantize, coins.cpp AddCoins,
+    // primitives/transaction.cpp GetValueOut -- so their difference is spock-aligned, matching
+    // legacy where the per-tx fee is also rounded to a spock. No extra rounding needed here.
     const Amount txfee_aux = nValueIn - value_out;
     if (!MoneyRange(txfee_aux)) {
         return state.DoS(100, false, REJECT_INVALID, "bad-txns-fee-outofrange");

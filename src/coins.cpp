@@ -134,10 +134,16 @@ void AddCoins(CCoinsViewCache &cache, const CTransaction &tx, int nHeight,
     for (size_t i = 0; i < tx.vout.size(); ++i) {
         const COutPoint outpoint(txid, i);
         bool overwrite = check ? cache.HaveCoin(outpoint) : fCoinbase;
+        // DeVault [1F]: quantize the value entering the UTXO up to a spock (0.001 DVT), matching
+        // legacy Amount's copy-time QuantizeAmount. The (quantized) UTXO value is what the FORKID
+        // sighash, fees, and gettxoutsetinfo observe when this output is later spent; raw block
+        // bytes (and thus block/tx hashes) are unaffected. See amount.h SpockQuantize.
+        CTxOut out = tx.vout[i];
+        out.nValue = SpockQuantize(out.nValue);
         // Always set the possible_overwrite flag to AddCoin for coinbase txn,
         // in order to correctly deal with the pre-BIP30 occurrences of
         // duplicate coinbase transactions.
-        cache.AddCoin(outpoint, Coin(tx.vout[i], nHeight, fCoinbase),
+        cache.AddCoin(outpoint, Coin(std::move(out), nHeight, fCoinbase),
                       overwrite);
     }
 }

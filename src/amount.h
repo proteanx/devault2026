@@ -146,19 +146,39 @@ inline constexpr Amount SATOSHI = Amount::satoshi();
 inline constexpr Amount CASH = 100 * SATOSHI;
 inline constexpr Amount COIN = 100'000'000 * SATOSHI;
 
+/**
+ * DeVault [1F]: the unit of account is a "spock" = 0.001 DVT = 100000 satoshi (legacy
+ * src/amount.h Amount::MIN_AMOUNT). Legacy Amount quantizes EVERY value up to a spock, rounding
+ * UP, on each copy/arithmetic (Amount::QuantizeAmount); only raw (de)serialization is exact, so
+ * block hashes are unaffected but the UTXO, the FORKID sighash, fees, and the supply total all
+ * observe the rounded-up value. We keep BCHN's satoshi-granular Amount (so SATOSHI / fee-rate /
+ * wallet code is untouched) and instead apply this spock round-up at the consensus boundaries
+ * where legacy quantization is observable: values entering the UTXO (coins.cpp AddCoins) and
+ * CTransaction::GetValueOut(). Round-up is correct for the non-negative amounts at those sites.
+ * (Porting the full quantizing Amount class for the live chain's wallet/RPC display is deferred
+ * to the post-fork phase -- same now-vs-later split as the cold-rewards engine.)
+ */
+inline constexpr int64_t SPOCK_SATS = 100'000; // legacy Amount::MIN_AMOUNT (0.001 DVT)
+inline constexpr Amount SpockQuantize(const Amount a) {
+    const int64_t am = a / SATOSHI;
+    const int64_t residual = am % SPOCK_SATS;
+    int64_t q = am - residual;
+    if (residual > 0) { q += SPOCK_SATS; }
+    return q * SATOSHI;
+}
+
 extern const std::string CURRENCY_UNIT;
 
 /**
  * No amount larger than this (in satoshi) is valid.
  *
- * Note that this constant is *not* the total money supply, which in Bitcoin
- * currently happens to be less than 21,000,000 BCH for various reasons, but
- * rather a sanity check. As this sanity check is used by consensus-critical
- * validation code, the exact value of the MAX_MONEY constant is consensus
- * critical; in unusual circumstances like a(nother) overflow bug that allowed
- * for the creation of coins out of thin air modification could lead to a fork.
+ * DeVault [1F]: this is *not* the total money supply (DeVault's is targeted between 4 and 5
+ * billion DVT, TBD) but a sanity cap, set at 2 Billion due to the int64 arithmetic limit. As this
+ * sanity check is used by consensus-critical validation code, the exact value of the MAX_MONEY
+ * constant is consensus critical; in unusual circumstances like a(nother) overflow bug that
+ * allowed for the creation of coins out of thin air, modification could lead to a fork.
  */
-inline constexpr Amount MAX_MONEY = 21'000'000 * COIN;
+inline constexpr Amount MAX_MONEY = 2'000'000'000 * COIN; // 2 Billion (legacy DeVault amount.h)
 inline bool MoneyRange(const Amount nValue) {
     return nValue >= Amount::zero() && nValue <= MAX_MONEY;
 }

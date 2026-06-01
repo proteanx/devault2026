@@ -109,8 +109,14 @@ CTransaction::CTransaction(CMutableTransaction &&tx)
 Amount CTransaction::GetValueOut() const {
     Amount nValueOut = Amount::zero();
     for (const auto &tx_out : vout) {
-        nValueOut += tx_out.nValue;
-        if (!MoneyRange(tx_out.nValue) || !MoneyRange(nValueOut)) {
+        // DeVault [1F]: each output value is quantized up to a spock (0.001 DVT) before summing
+        // (sum-of-ceils), matching legacy GetValueOut where Amount's pass-by-value copy quantizes
+        // each value. This (quantized) total feeds the fee, the coinbase-amount check, and the
+        // bad-txns-in-belowout check; raw output bytes (block/tx hashes) are unaffected. See
+        // amount.h SpockQuantize.
+        const Amount value = SpockQuantize(tx_out.nValue);
+        nValueOut += value;
+        if (!MoneyRange(value) || !MoneyRange(nValueOut)) {
             throw std::runtime_error(std::string(__func__) +
                                      ": value out of range");
         }
