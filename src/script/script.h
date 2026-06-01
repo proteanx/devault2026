@@ -184,8 +184,15 @@ enum opcodetype {
     // additional byte string operations
     OP_REVERSEBYTES = 0xbc,
 
+    // DeVault legacy: BLS public-key-hash opcode (0xbd; HASH160 in DeVault), used by the historical
+    // "blskeyhash" output type. V2 carries no BLS crypto and does NOT execute these scripts -- it
+    // only needs this opcode value to RECOGNIZE the blskeyhash pattern and then accepts the rare
+    // historical spends without script-verification while re-validating the chain (see
+    // validation.cpp IsBlsKeyHashScript / SCRIPT_ENABLE_BLS / DEVAULT_BLS_HANDLING.md). POST-FORK
+    // these spends must be frozen.
+    OP_BLSKEYHASH = 0xbd,
+
     // Available codepoints
-    // 0xbd,
     // 0xbe,
     // 0xbf,
 

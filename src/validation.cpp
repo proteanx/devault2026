@@ -1257,6 +1257,18 @@ int GetSpendHeight(const CCoinsViewCache &inputs) {
     return pindexPrev->nHeight + 1;
 }
 
+// DeVault legacy [BLS]: recognize the historical "blskeyhash" output pattern
+//   OP_DUP OP_BLSKEYHASH <20-byte push> OP_EQUALVERIFY OP_CHECKSIG   (== DeVault MatchPayToBLSkeyHash).
+// Spends of these are spock's unfinished mining-pool BLS experiment -- a handful of tiny test
+// transactions (first at height 344881) that used a non-standard BLS aggregate scriptSig. V2 does
+// not carry the RELIC pairing library and does not emulate the BLS script VM; for re-validating
+// the canonical chain it recognizes such inputs and accepts their script as-is (see CheckInputs).
+// POST-FORK these spends MUST be rejected (frozen); see DEVAULT_BLS_HANDLING.md.
+static bool IsBlsKeyHashScript(const CScript &s) {
+    return s.size() == 25 && s[0] == OP_DUP && s[1] == OP_BLSKEYHASH &&
+           s[2] == 0x14 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG;
+}
+
 bool CheckInputs(const CTransaction &tx, CValidationState &state,
                  const CCoinsViewCache &view, bool fScriptChecks,
                  const uint32_t flags, bool sigCacheStore, bool scriptCacheStore,
@@ -1301,6 +1313,18 @@ bool CheckInputs(const CTransaction &tx, CValidationState &state,
 
     for (size_t i = 0; i < tx.vin.size(); ++i) {
         assert(!contextVec[i].coin().IsSpent());
+
+        // DeVault legacy [BLS]: accept (do NOT script-verify) an input that spends a historical
+        // blskeyhash output. V2 has no RELIC BLS pairing and does not emulate the non-standard BLS
+        // aggregate VM; re-validating the canonical chain, we trust the (already-valid) script.
+        // Bounded to post-blsActivationTime (SCRIPT_ENABLE_BLS) and the exact blskeyhash pattern.
+        // The block's other inputs are still fully verified. POST-FORK these spends MUST be
+        // rejected (frozen) so the UTXOs are unspendable -- see DEVAULT_BLS_HANDLING.md.
+        if ((flags & SCRIPT_ENABLE_BLS) &&
+            IsBlsKeyHashScript(contextVec[i].coin().GetTxOut().scriptPubKey)) {
+            continue;
+        }
+
         if ( ! txdata.populated) {
             txdata.PopulateFromContext(contextVec[i]);
         }
@@ -1516,14 +1540,20 @@ static uint32_t GetNextBlockScriptFlags(const Consensus::Params &params, const C
     flags |= SCRIPT_VERIFY_NULLFAIL;
 
     // DeVault "script upgrade" boundary (MTP >= scriptUpgradeActivationTime, ~2020-10-10 on mainnet):
-    // start enforcing push-only signatures and clean stack. Mirrors DeVault IsBLSEnabled(pindexPrev)
-    // exactly -- parent-MTP convention, and like DeVault this is called with pindex->pprev in
-    // ConnectBlock. NOTE: DeVault also set SCRIPT_VERIFY_CHECKDATASIG_SIGOPS here, but that flag does
-    // not exist in BCHN (removed with the move to sigchecks); omitting it only lowers the sigop count
-    // -> strictly more lenient -> safe for re-validating the existing chain.
+    // start enforcing push-only signatures and clean stack, AND enable BLS (blskeyhash) script
+    // handling. This is DeVault IsBLSEnabled(pindexPrev) exactly -- parent-MTP convention, called
+    // with pindex->pprev in ConnectBlock. NOTE: DeVault also set SCRIPT_VERIFY_CHECKDATASIG_SIGOPS
+    // here, but that flag does not exist in BCHN (removed with the move to sigchecks); omitting it
+    // only lowers the sigop count -> strictly more lenient -> safe for re-validating the chain.
     if (pindex && pindex->GetMedianTimePast() >= params.scriptUpgradeActivationTime) {
         flags |= SCRIPT_VERIFY_SIGPUSHONLY;
         flags |= SCRIPT_VERIFY_CLEANSTACK;
+        // DeVault legacy [BLS]: spock's mining-pool experiment left a tiny number of on-chain
+        // blskeyhash transactions (first spend at height 344881). V2 re-validates them
+        // structurally only (no RELIC pairing) so the historical chain syncs; the spend outputs
+        // are unspendable going forward (POST-FORK must reject blskeyhash spends; coins replaced
+        // from the budget). See DEVAULT_BLS_HANDLING.md.
+        flags |= SCRIPT_ENABLE_BLS;
     }
 
     return flags;
@@ -1826,6 +1856,28 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state,
                 error("%s: accumulated fee in the block out of range.",
                       __func__),
                 REJECT_INVALID, "bad-txns-accumulated-fee-outofrange");
+        }
+
+        // DeVault legacy [BLS]: tally the rare historical blskeyhash UTXOs (created & spent) for
+        // the record. Fires only post-blsActivationTime; the input coins are still in `view` here
+        // (CheckTxInputs just read them). Betting this is ~1 total -- spock's mining-pool test.
+        if (flags & SCRIPT_ENABLE_BLS) {
+            for (const auto &txout : tx.vout) {
+                if (IsBlsKeyHashScript(txout.scriptPubKey)) {
+                    LogPrintf("[BLS] blskeyhash UTXO CREATED: height=%d txid=%s value=%s\n",
+                              pindex->nHeight, tx.GetId().ToString(), txout.nValue.ToString());
+                }
+            }
+            if (!isCoinBase) {
+                for (const auto &in : tx.vin) {
+                    const Coin &c = view.AccessCoin(in.prevout);
+                    if (!c.IsSpent() && IsBlsKeyHashScript(c.GetTxOut().scriptPubKey)) {
+                        LogPrintf("[BLS] blskeyhash UTXO SPENT: height=%d spend_txid=%s value=%s\n",
+                                  pindex->nHeight, tx.GetId().ToString(),
+                                  c.GetTxOut().nValue.ToString());
+                    }
+                }
+            }
         }
 
         // Check token spends are within consensus

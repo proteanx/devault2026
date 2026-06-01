@@ -126,4 +126,12 @@ enum {
 
     // Upgrade 12
     SCRIPT_ENABLE_MAY2026 = (1U << 30),
+
+    // DeVault legacy: marks the blsActivationTime / scriptUpgradeActivationTime boundary as active.
+    // V2 carries no RELIC BLS pairing and does not emulate the BLS script VM; while re-validating
+    // the canonical chain it ACCEPTS (without script-verifying) the rare historical spends of
+    // blskeyhash outputs -- spock's unfinished mining-pool experiment (see validation.cpp
+    // CheckInputs / IsBlsKeyHashScript). POST-FORK these spends MUST be rejected (frozen) so the
+    // UTXOs are unspendable, not anyone-can-spend. See DEVAULT_BLS_HANDLING.md.
+    SCRIPT_ENABLE_BLS = (1U << 19),
 };
