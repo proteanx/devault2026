@@ -113,9 +113,9 @@ public:
         consensus.defaultAssumeValid = BlockHash();
 
         // --- DeVault-specific consensus parameters (ported from legacy v1.2.1, mainnet) ---
-        // BLS activation MTP: no BLS tx ever existed on mainnet, but at this time the script
-        // flags CHECKDATASIG_SIGOPS/SIGPUSHONLY/CLEANSTACK flip on (reproduced in 1E).
-        consensus.blsActivationTime = 1602345600; // 2020-10-10 16:00:00 UTC
+        // DeVault's 2020-10-10 upgrade MTP: enforcement of CHECKDATASIG_SIGOPS / SIGPUSHONLY /
+        // CLEANSTACK flips on here (legacy name: blsActivationTime; BLS itself is dropped in V2).
+        consensus.scriptUpgradeActivationTime = 1602345600; // 2020-10-10 16:00:00 UTC
         consensus.nBlocksPerYear = 30 * 24 * 365.25; // 262980
         consensus.nInitialMiningRewardInCoins = 500;
         consensus.minerCapSystemChangeHeight = 0; // unused in legacy (never assigned)
@@ -375,7 +375,7 @@ public:
         consensus.defaultAssumeValid = BlockHash();
 
         // --- DeVault-specific consensus parameters (legacy v1.2.1, testnet) ---
-        consensus.blsActivationTime = 1595895427;
+        consensus.scriptUpgradeActivationTime = 1595895427;
         consensus.nBlocksPerYear = 30 * 24 * 365.25;
         consensus.nInitialMiningRewardInCoins = 500;
         consensus.minerCapSystemChangeHeight = 0;
@@ -1142,7 +1142,7 @@ public:
         consensus.defaultAssumeValid = BlockHash();
 
         // --- DeVault-specific consensus parameters (legacy v1.2.1, regtest) ---
-        consensus.blsActivationTime = 1999999999; // effectively disabled on regtest
+        consensus.scriptUpgradeActivationTime = 1999999999; // effectively disabled on regtest
         consensus.nBlocksPerYear = 30 * 24 * 365.25;
         consensus.nInitialMiningRewardInCoins = 500;
         consensus.minerCapSystemChangeHeight = 0;

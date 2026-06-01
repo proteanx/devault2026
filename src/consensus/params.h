@@ -105,11 +105,12 @@ struct Params {
     abla::Config ablaConfig;
 
     // --- DeVault-specific consensus parameters (ported from legacy DeVault v1.2.1) ---
-    /** Unix time (MTP) at which DeVault's "BLS" script flags activate
-     *  (CHECKDATASIG_SIGOPS, SIGPUSHONLY, CLEANSTACK). No BLS transaction ever existed on
-     *  mainnet, but this flag flip is a real historical rule change that must be reproduced
-     *  during history validation (subphase 1E). */
-    int blsActivationTime;
+    /** Unix time (MTP) at which DeVault activated enforcement of the script flags
+     *  CHECKDATASIG_SIGOPS, SIGPUSHONLY and CLEANSTACK. Legacy DeVault gated these behind what
+     *  it called the "BLS" fork (blsActivationTime), but no BLS transaction ever existed and BLS
+     *  itself is dropped in V2 — only this script-flag boundary survives. Reproducing it is
+     *  required for faithful history validation (1E): the flags are OFF before this time, ON after. */
+    int scriptUpgradeActivationTime;
     /** Blocks per year — drives the Shark subsidy curve, superblock cadence, and
      *  cold-reward maturity. */
     int64_t nBlocksPerYear;
