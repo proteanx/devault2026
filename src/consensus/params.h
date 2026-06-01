@@ -6,12 +6,15 @@
 
 #pragma once
 
+#include <amount.h>
 #include <consensus/abla.h>
 #include <primitives/blockhash.h>
 #include <uint256.h>
 
 #include <limits>
 #include <optional>
+#include <tuple>
+#include <vector>
 
 namespace Consensus {
 
@@ -100,5 +103,42 @@ struct Params {
 
     /** For upgrade10 -- the ABLA config (adjustable block limit algorithm) */
     abla::Config ablaConfig;
+
+    // --- DeVault-specific consensus parameters (ported from legacy DeVault v1.2.1) ---
+    /** Unix time (MTP) at which DeVault's "BLS" script flags activate
+     *  (CHECKDATASIG_SIGOPS, SIGPUSHONLY, CLEANSTACK). No BLS transaction ever existed on
+     *  mainnet, but this flag flip is a real historical rule change that must be reproduced
+     *  during history validation (subphase 1E). */
+    int blsActivationTime;
+    /** Blocks per year — drives the Shark subsidy curve, superblock cadence, and
+     *  cold-reward maturity. */
+    int64_t nBlocksPerYear;
+    /** Initial mining reward in whole coins (input to the Shark inflation curve). */
+    int64_t nInitialMiningRewardInCoins;
+    int64_t minerCapSystemChangeHeight;
+    // Cold Rewards (interest-like reward paid to long-held UTXOs)
+    std::vector<int64_t> nPerCentPerYear;
+    int64_t nMinRewardBlocks;
+    std::vector<std::tuple<int64_t, Amount>> vecMinRewardBalances;
+    Amount nMinReward;
+    /** Window for Zawy's LWMA difficulty adjustment algorithm. */
+    int64_t nZawyLwmaAveragingWindow;
+
+    /** Minimum UTXO balance required to earn a cold reward at a given height. */
+    Amount getMinRewardBalance(int Height) const {
+        size_t index = 0;
+        int BalanceHeight = 0;
+        Amount Balance;
+        do {
+            std::tie(BalanceHeight, Balance) = vecMinRewardBalances[index++];
+        } while ((BalanceHeight < Height) && (index < vecMinRewardBalances.size()));
+        return Balance;
+    }
+
+    /** A "superblock" (budget payout block) occurs once per month. */
+    bool IsSuperBlock(int nBlockHeight) const {
+        int64_t nBlocksPerPeriod = (nBlocksPerYear / 12);
+        return (nBlockHeight % nBlocksPerPeriod == 0);
+    }
 };
 } // namespace Consensus

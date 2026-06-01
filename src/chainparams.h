@@ -113,6 +113,9 @@ public:
         return base58Prefixes[type];
     }
     const std::string &CashAddrPrefix() const { return cashaddrPrefix; }
+    // DeVault: CashAddr-encoded WIF secret-key prefix (e.g. "dvtpriv"). Consumed by the
+    // wallet WIF encode/decode in Phase 2 (dual-encode decision: cashaddr canonical + Base58 accepted).
+    const std::string &CashAddrSecretPrefix() const { return cashaddrSecretPrefix; }
     const std::vector<SeedSpec6> &FixedSeeds() const { return vFixedSeeds; }
     const CCheckpointData &Checkpoints() const { return checkpointData; }
     const ChainTxData &TxData() const { return chainTxData; }
@@ -130,6 +133,7 @@ protected:
     std::vector<std::string> vSeeds;
     std::vector<uint8_t> base58Prefixes[MAX_BASE58_TYPES];
     std::string cashaddrPrefix;
+    std::string cashaddrSecretPrefix;
     std::string strNetworkID;
     CBlock genesis;
     std::vector<SeedSpec6> vFixedSeeds;

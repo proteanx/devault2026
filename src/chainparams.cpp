@@ -64,7 +64,7 @@ static CBlock CreateGenesisBlock(const char *pszTimestamp,
 CBlock CreateGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits,
                           int32_t nVersion, const Amount genesisReward) {
     const char *pszTimestamp =
-        "The Times 03/Jan/2009 Chancellor on brink of second bailout for banks";
+        "BBC 06/03/2019 Tiananmen's tank man: The image that China forgot";
     const CScript genesisOutputScript =
         CScript() << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909"
                               "a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112"
@@ -98,7 +98,7 @@ public:
             "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         // two weeks
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
-        consensus.nPowTargetSpacing = 10 * 60;
+        consensus.nPowTargetSpacing = 2 * 60; // DeVault: 120-second blocks
         consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.fPowNoRetargeting = false;
 
@@ -107,14 +107,25 @@ public:
         // Two days
         consensus.nASERTHalfLife = 2 * 24 * 60 * 60;
 
-        // The best chain should have at least this much work.
-        consensus.nMinimumChainWork =
-            ChainParamsConstants::MAINNET_MINIMUM_CHAIN_WORK;
+        // DeVault: keep minimum chain work low (the real chain has far more) and validate
+        // all signatures during history parity. Tightened (real assumevalid checkpoint) in 1K.
+        consensus.nMinimumChainWork = uint256S("0x00");
+        consensus.defaultAssumeValid = BlockHash();
 
-        // By default assume that the signatures in ancestors of this block are
-        // valid.
-        consensus.defaultAssumeValid =
-            ChainParamsConstants::MAINNET_DEFAULT_ASSUME_VALID;
+        // --- DeVault-specific consensus parameters (ported from legacy v1.2.1, mainnet) ---
+        // BLS activation MTP: no BLS tx ever existed on mainnet, but at this time the script
+        // flags CHECKDATASIG_SIGOPS/SIGPUSHONLY/CLEANSTACK flip on (reproduced in 1E).
+        consensus.blsActivationTime = 1602345600; // 2020-10-10 16:00:00 UTC
+        consensus.nBlocksPerYear = 30 * 24 * 365.25; // 262980
+        consensus.nInitialMiningRewardInCoins = 500;
+        consensus.minerCapSystemChangeHeight = 0; // unused in legacy (never assigned)
+        consensus.nPerCentPerYear = {15, 12, 9, 7, 5};
+        consensus.nMinRewardBlocks = consensus.nBlocksPerYear / 12; // 21915 (monthly)
+        consensus.vecMinRewardBalances = {
+            std::tuple<int64_t, Amount>(109575, 1000 * COIN),
+            std::tuple<int64_t, Amount>(2147483647 /* INT32_MAX */, 25000 * COIN)};
+        consensus.nMinReward = 50 * COIN;
+        consensus.nZawyLwmaAveragingWindow = 72;
 
         // August 1, 2017 hard fork
         consensus.uahfHeight = 478558;
@@ -184,58 +195,50 @@ public:
          * normal data. The characters are rarely used upper ASCII, not valid as
          * UTF-8, and produce a large 32-bit integer with any alignment.
          */
-        diskMagic[0] = 0xf9;
-        diskMagic[1] = 0xbe;
-        diskMagic[2] = 0xb4;
-        diskMagic[3] = 0xd9;
-        netMagic[0] = 0xe3;
-        netMagic[1] = 0xe1;
-        netMagic[2] = 0xf3;
-        netMagic[3] = 0xe8;
-        nDefaultPort = 8333;
+        diskMagic[0] = 0xc0;
+        diskMagic[1] = 0xd2;
+        diskMagic[2] = 0xe0;
+        diskMagic[3] = 0xd1;
+        netMagic[0] = 0xde;
+        netMagic[1] = 0x3a;
+        netMagic[2] = 0x9c;
+        netMagic[3] = 0x03;
+        nDefaultPort = 33039;
         nPruneAfterHeight = 100000;
-        m_assumed_blockchain_size = 250;    // 207G
-        m_assumed_chain_state_size = 6;     // 4.2G
+        m_assumed_blockchain_size = 2;
+        m_assumed_chain_state_size = 1;
 
-        genesis = CreateGenesisBlock(1231006505, 2083236893, 0x1d00ffff, 1,
+        genesis = CreateGenesisBlock(1559660400, 3423714883, 0x1d00ffff, 1,
                                      50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock ==
-               uint256S("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1"
-                        "b60a8ce26f"));
+               uint256S("0000000038e62464371566f6a8d35c01aa54a7da351b2dbf85d92f"
+                        "30357f3a90"));
         assert(genesis.hashMerkleRoot ==
-               uint256S("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b"
-                        "7afdeda33b"));
+               uint256S("95d9f62f327ebae0d88f38c72224407e5dde5157f952cdb70921c2"
+                        "dda326f35b"));
 
-        vSeeds.emplace_back("seed.flowee.cash");
-        // Note that of those which support the service bits prefix, most only
-        // support a subset of possible options. This is fine at runtime as
-        // we'll fall back to using them as a oneshot if they don't support the
-        // service bits we want, but we should get them updated to support all
-        // service bits wanted by any release ASAP to avoid it where possible.
-        // bitcoinforks seeders
-        vSeeds.emplace_back("seed-bch.bitcoinforks.org");
-        // BU backed seeder
-        vSeeds.emplace_back("btccash-seeder.bitcoinunlimited.info");
-        // BCHD
-        vSeeds.emplace_back("seed.bchd.cash");
-        // Loping.net
-        vSeeds.emplace_back("seed.bch.loping.net");
-        // Electroncash.de
-        vSeeds.emplace_back("dnsseed.electroncash.de");
-        // C3 Soft (NilacTheGrim)
-        vSeeds.emplace_back("bchseed.c3-soft.com");
-        // Jason Dreyzehner
-        vSeeds.emplace_back("bch.bitjson.com");
+        // DeVault DNS seeders (may be stale; history-parity sync uses -addnode with the live
+        // peers captured in parity/oracle/peers.txt). vFixedSeeds cleared below.
+        vSeeds.emplace_back("seed.devault.cc");
+        vSeeds.emplace_back("seed.exploredvt.com");
+        vSeeds.emplace_back("dvtapi.com");
+        vSeeds.emplace_back("seed.minedvt.com");
+        vSeeds.emplace_back("seed.devault.online");
+        vSeeds.emplace_back("seed.dvtapi.com");
+        vSeeds.emplace_back("seed.proteanx.com");
 
+        // base58 address prefixes are retained only for Base58 WIF dual-decode (secret key);
+        // DeVault addresses are CashAddr-only ("devault:"). See WIF decision (Phase 2 wallet).
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<uint8_t>(1, 0);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<uint8_t>(1, 5);
         base58Prefixes[SECRET_KEY] = std::vector<uint8_t>(1, 128);
         base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x88, 0xB2, 0x1E};
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xAD, 0xE4};
-        cashaddrPrefix = "bitcoincash";
+        cashaddrPrefix = "devault";
+        cashaddrSecretPrefix = "dvtpriv";
 
-        vFixedSeeds.assign(std::begin(pnSeed6_main), std::end(pnSeed6_main));
+        vFixedSeeds.clear(); // DeVault fixed seeds TBD; use -addnode for parity sync
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = true;
@@ -356,10 +359,10 @@ public:
         // 00000000025e930139bac5c6c31a403776da130831ab85be56578f3fa75369bb
         consensus.CSVHeight = 770112;
         consensus.powLimit = uint256S(
-            "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+            "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         // two weeks
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
-        consensus.nPowTargetSpacing = 10 * 60;
+        consensus.nPowTargetSpacing = 2 * 15; // DeVault testnet: 30-second blocks
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = false;
 
@@ -368,14 +371,21 @@ public:
         // One hour
         consensus.nASERTHalfLife = 60 * 60;
 
-        // The best chain should have at least this much work.
-        consensus.nMinimumChainWork =
-            ChainParamsConstants::TESTNET_MINIMUM_CHAIN_WORK;
+        consensus.nMinimumChainWork = uint256S("0x00");
+        consensus.defaultAssumeValid = BlockHash();
 
-        // By default assume that the signatures in ancestors of this block are
-        // valid.
-        consensus.defaultAssumeValid =
-            ChainParamsConstants::TESTNET_DEFAULT_ASSUME_VALID;
+        // --- DeVault-specific consensus parameters (legacy v1.2.1, testnet) ---
+        consensus.blsActivationTime = 1595895427;
+        consensus.nBlocksPerYear = 30 * 24 * 365.25;
+        consensus.nInitialMiningRewardInCoins = 500;
+        consensus.minerCapSystemChangeHeight = 0;
+        consensus.nPerCentPerYear = {1500, 1200, 900, 7, 5};
+        consensus.nMinRewardBlocks = consensus.nBlocksPerYear / 12;
+        consensus.vecMinRewardBalances = {
+            std::tuple<int64_t, Amount>(2000, 1000 * COIN),
+            std::tuple<int64_t, Amount>(2147483647 /* INT32_MAX */, 25000 * COIN)};
+        consensus.nMinReward = 50 * COIN;
+        consensus.nZawyLwmaAveragingWindow = 72;
 
         // August 1, 2017 hard fork
         consensus.uahfHeight = 1155875;
@@ -437,28 +447,28 @@ public:
         // Ensure ABLA *is* "fixed size" for testnet3
         assert(consensus.ablaConfig.IsFixedSize());
 
-        diskMagic[0] = 0x0b;
-        diskMagic[1] = 0x11;
-        diskMagic[2] = 0x09;
-        diskMagic[3] = 0x07;
+        diskMagic[0] = 0x0d;
+        diskMagic[1] = 0x08;
+        diskMagic[2] = 0x13;
+        diskMagic[3] = 0x04;
         netMagic[0] = 0xf4;
         netMagic[1] = 0xe5;
         netMagic[2] = 0xf3;
         netMagic[3] = 0xf4;
-        nDefaultPort = 18333;
+        nDefaultPort = 39039;
         nPruneAfterHeight = 1000;
         m_assumed_blockchain_size = 60;     // 43G
         m_assumed_chain_state_size = 2;     // 1.3G
 
         genesis =
-            CreateGenesisBlock(1296688602, 414098458, 0x1d00ffff, 1, 50 * COIN);
+            CreateGenesisBlock(1570974562, 3551570310, 0x1d00ffff, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock ==
-               uint256S("000000000933ea01ad0ee984209779baaec3ced90fa3f408719526"
-                        "f8d77f4943"));
+               uint256S("00000000797947527458fac580afda78e5274b3cd3c8ca9c0b53d6"
+                        "53891eeed9"));
         assert(genesis.hashMerkleRoot ==
-               uint256S("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b"
-                        "7afdeda33b"));
+               uint256S("95d9f62f327ebae0d88f38c72224407e5dde5157f952cdb70921c2"
+                        "dda326f35b"));
 
         vFixedSeeds.clear();
         vSeeds.clear();
@@ -475,8 +485,9 @@ public:
         base58Prefixes[SECRET_KEY] = std::vector<uint8_t>(1, 239);
         base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x35, 0x87, 0xCF};
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
-        cashaddrPrefix = "bchtest";
-        vFixedSeeds.assign(std::begin(pnSeed6_testnet3), std::end(pnSeed6_testnet3));
+        cashaddrPrefix = "dvtest";
+        cashaddrSecretPrefix = "testpriv";
+        vFixedSeeds.clear();
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
@@ -673,8 +684,9 @@ public:
 
         genesis = CreateGenesisBlock(1597811185, 114152193, 0x1d00ffff, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock ==
-            BlockHash::fromHex("000000001dd410c49a788668ce26751718cc797474d3152a5fc073dd44fd9f7b"));
+        // NOTE: BCH testnet4 is unused by DeVault. The shared genesis pszTimestamp was changed
+        // to DeVault's, so the original BCH genesis-hash assert no longer holds; removed to avoid
+        // an abort if this (defunct) net is ever constructed.
 
         vFixedSeeds.clear();
         vSeeds.clear();
@@ -861,11 +873,8 @@ public:
 
         genesis = CreateGenesisBlock(1598282438, -1567304284, 0x1d00ffff, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
-
-        assert(consensus.hashGenesisBlock ==
-            uint256S("00000000e6453dc2dfe1ffa19023f86002eb11dbb8e87d0291a4599f0430be52"));
-        assert(genesis.hashMerkleRoot ==
-            uint256S("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        // NOTE: BCH scalenet is unused by DeVault. Genesis-hash/merkle asserts removed because the
+        // shared genesis pszTimestamp was changed to DeVault's (avoids abort if ever constructed).
 
         vFixedSeeds.clear();
         vSeeds.clear();
@@ -1027,8 +1036,8 @@ public:
 
         genesis = CreateGenesisBlock(1597811185, 114152193, 0x1d00ffff, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock ==
-            BlockHash::fromHex("000000001dd410c49a788668ce26751718cc797474d3152a5fc073dd44fd9f7b"));
+        // NOTE: BCH chipnet is unused by DeVault. Genesis-hash assert removed because the shared
+        // genesis pszTimestamp was changed to DeVault's (avoids abort if ever constructed).
 
         vFixedSeeds.clear();
         vSeeds.clear();
@@ -1116,7 +1125,7 @@ public:
             "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         // two weeks
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
-        consensus.nPowTargetSpacing = 10 * 60;
+        consensus.nPowTargetSpacing = 2 * 60; // DeVault: 120-second blocks
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = true;
 
@@ -1131,6 +1140,18 @@ public:
         // By default assume that the signatures in ancestors of this block are
         // valid.
         consensus.defaultAssumeValid = BlockHash();
+
+        // --- DeVault-specific consensus parameters (legacy v1.2.1, regtest) ---
+        consensus.blsActivationTime = 1999999999; // effectively disabled on regtest
+        consensus.nBlocksPerYear = 30 * 24 * 365.25;
+        consensus.nInitialMiningRewardInCoins = 500;
+        consensus.minerCapSystemChangeHeight = 0;
+        consensus.nPerCentPerYear = {15, 12, 9, 7, 5};
+        consensus.nMinRewardBlocks = consensus.nBlocksPerYear / 12;
+        consensus.vecMinRewardBalances = {
+            std::tuple<int64_t, Amount>(2147483647 /* INT32_MAX */, 1000 * COIN)};
+        consensus.nMinReward = 50 * COIN;
+        consensus.nZawyLwmaAveragingWindow = 72;
 
         // UAHF is always enabled on regtest.
         consensus.uahfHeight = 0;
@@ -1198,14 +1219,14 @@ public:
         m_assumed_blockchain_size = 0;
         m_assumed_chain_state_size = 0;
 
-        genesis = CreateGenesisBlock(1296688602, 2, 0x207fffff, 1, 50 * COIN);
+        genesis = CreateGenesisBlock(1559660400, 3, 0x207fffff, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock ==
-               uint256S("0x0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b"
-                        "1a11466e2206"));
+               uint256S("0x7f39501a21abfd9930011aaf76bed139f16d896ca9bc66f9f4770d"
+                        "345459d08a"));
         assert(genesis.hashMerkleRoot ==
-               uint256S("0x4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab212"
-                        "7b7afdeda33b"));
+               uint256S("0x95d9f62f327ebae0d88f38c72224407e5dde5157f952cdb70921c2"
+                        "dda326f35b"));
 
         //! Regtest mode doesn't have any fixed seeds.
         vFixedSeeds.clear();
@@ -1229,7 +1250,8 @@ public:
         base58Prefixes[SECRET_KEY] = std::vector<uint8_t>(1, 239);
         base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x35, 0x87, 0xCF};
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
-        cashaddrPrefix = "bchreg";
+        cashaddrPrefix = "dvreg";
+        cashaddrSecretPrefix = "regpriv";
     }
 };
 
