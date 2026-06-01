@@ -1491,80 +1491,31 @@ int32_t ComputeBlockVersion(const CBlockIndex *pindexPrev,
 // Returns the script flags which should be checked for the block after
 // the given block.
 static uint32_t GetNextBlockScriptFlags(const Consensus::Params &params, const CBlockIndex *pindex) {
+    // DeVault historical consensus ruleset (see DEVAULT_HISTORICAL_CONSENSUS_RULESET.md).
+    // DeVault's GetBlockScriptFlags enforces the following from genesis (no height/upgrade gating),
+    // and adds a small set at the script-upgrade MTP boundary. All Graviton+ BCH flags
+    // (SCHNORR_MULTISIG, MINIMALDATA, sigchecks, 64-bit ints, native introspection, tokens, p2sh_32,
+    // BigInt, ...) are intentionally NOT set -- DeVault never had them.
     uint32_t flags = SCRIPT_VERIFY_NONE;
 
-    // Start enforcing P2SH (BIP16)
-    if ((pindex->nHeight + 1) >= params.BIP16Height) {
-        flags |= SCRIPT_VERIFY_P2SH;
-    }
+    flags |= SCRIPT_VERIFY_P2SH;
+    flags |= SCRIPT_VERIFY_DERSIG;
+    flags |= SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY;
+    flags |= SCRIPT_VERIFY_CHECKSEQUENCEVERIFY;
+    flags |= SCRIPT_VERIFY_STRICTENC;
+    flags |= SCRIPT_ENABLE_SIGHASH_FORKID;
+    flags |= SCRIPT_VERIFY_LOW_S;
+    flags |= SCRIPT_VERIFY_NULLFAIL;
 
-    // Start enforcing the DERSIG (BIP66) rule.
-    if ((pindex->nHeight + 1) >= params.BIP66Height) {
-        flags |= SCRIPT_VERIFY_DERSIG;
-    }
-
-    // Start enforcing CHECKLOCKTIMEVERIFY (BIP65) rule.
-    if ((pindex->nHeight + 1) >= params.BIP65Height) {
-        flags |= SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY;
-    }
-
-    // Start enforcing CSV (BIP68, BIP112 and BIP113) rule.
-    if ((pindex->nHeight + 1) >= params.CSVHeight) {
-        flags |= SCRIPT_VERIFY_CHECKSEQUENCEVERIFY;
-    }
-
-    // If the UAHF is enabled, we start accepting replay protected txns
-    if (IsUAHFenabled(params, pindex)) {
-        flags |= SCRIPT_VERIFY_STRICTENC;
-        flags |= SCRIPT_ENABLE_SIGHASH_FORKID;
-    }
-
-    // If the DAA HF is enabled, we start rejecting transaction that use a high
-    // s in their signature. We also make sure that signature that are supposed
-    // to fail (for instance in multisig or other forms of smart contracts) are
-    // null.
-    if (IsDAAEnabled(params, pindex)) {
-        flags |= SCRIPT_VERIFY_LOW_S;
-        flags |= SCRIPT_VERIFY_NULLFAIL;
-    }
-
-    // When the magnetic anomaly fork is enabled, we start accepting
-    // transactions using the OP_CHECKDATASIG opcode and it's verify
-    // alternative. We also start enforcing push only signatures and
-    // clean stack.
-    if (IsMagneticAnomalyEnabled(params, pindex)) {
+    // DeVault "script upgrade" boundary (MTP >= scriptUpgradeActivationTime, ~2020-10-10 on mainnet):
+    // start enforcing push-only signatures and clean stack. Mirrors DeVault IsBLSEnabled(pindexPrev)
+    // exactly -- parent-MTP convention, and like DeVault this is called with pindex->pprev in
+    // ConnectBlock. NOTE: DeVault also set SCRIPT_VERIFY_CHECKDATASIG_SIGOPS here, but that flag does
+    // not exist in BCHN (removed with the move to sigchecks); omitting it only lowers the sigop count
+    // -> strictly more lenient -> safe for re-validating the existing chain.
+    if (pindex && pindex->GetMedianTimePast() >= params.scriptUpgradeActivationTime) {
         flags |= SCRIPT_VERIFY_SIGPUSHONLY;
         flags |= SCRIPT_VERIFY_CLEANSTACK;
-    }
-
-    if (IsGravitonEnabled(params, pindex)) {
-        flags |= SCRIPT_ENABLE_SCHNORR_MULTISIG;
-        flags |= SCRIPT_VERIFY_MINIMALDATA;
-    }
-
-    if (IsPhononEnabled(params, pindex)) {
-        flags |= SCRIPT_ENFORCE_SIGCHECKS;
-    }
-
-    if (IsUpgrade8Enabled(params, pindex)) {
-        flags |= SCRIPT_64_BIT_INTEGERS;
-        flags |= SCRIPT_NATIVE_INTROSPECTION;
-    }
-
-    // Activation for native tokens: PREFIX_TOKEN, token consensus, plus
-    // token introspection and SIGHASH_UTXOS (0x20) hash type flag.
-    // Activation for p2sh_32
-    if (IsUpgrade9Enabled(params, pindex)) {
-        flags |= SCRIPT_ENABLE_TOKENS;
-        flags |= SCRIPT_ENABLE_P2SH_32;
-    }
-
-    if (IsUpgrade11Enabled(params, pindex)) {
-        flags |= SCRIPT_ENABLE_MAY2025;
-    }
-
-    if (IsUpgrade12Enabled(params, pindex)) {
-        flags |= SCRIPT_ENABLE_MAY2026;
     }
 
     return flags;

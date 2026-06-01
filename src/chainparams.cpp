@@ -84,16 +84,16 @@ public:
         consensus.nSubsidyHalvingInterval = 210000;
         // 00000000000000ce80a7e057163a4db1d5ad7b20fb6f598c9597b9665c8fb0d4 -
         // April 1, 2012
-        consensus.BIP16Height = 173805;
-        consensus.BIP34Height = 227931;
+        consensus.BIP16Height = 0; // DeVault: P2SH always-on (see GetNextBlockScriptFlags)
+        consensus.BIP34Height = 1; // DeVault: coinbase-height enforced from height 1
         consensus.BIP34Hash = BlockHash::fromHex(
             "000000000000024b89b42a942fe0d9fea3bb44ab7bd1b19115dd6a759c0808b8");
         // 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
-        consensus.BIP65Height = 388381;
+        consensus.BIP65Height = 0; // DeVault: CLTV always-on
         // 00000000000000000379eaa19dce8c9b722d46ae6a57c2f1a988119488b50931
-        consensus.BIP66Height = 363725;
+        consensus.BIP66Height = 0; // DeVault: DERSIG always-on
         // 000000000000000004a1b34462cb8aeebd5799177f7a29cf28f2d1961716b5b5
-        consensus.CSVHeight = 419328;
+        consensus.CSVHeight = 0; // DeVault: CSV always-on
         consensus.powLimit = uint256S(
             "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         // two weeks
@@ -128,19 +128,19 @@ public:
         consensus.nZawyLwmaAveragingWindow = 72;
 
         // August 1, 2017 hard fork
-        consensus.uahfHeight = 478558;
+        consensus.uahfHeight = 0; // DeVault: post-UAHF (always-on)
 
         // November 13, 2017 hard fork
-        consensus.daaHeight = 504031;
+        consensus.daaHeight = 0; // DeVault: post-DAA (difficulty = LWMA)
 
         // November 15, 2018 hard fork
-        consensus.magneticAnomalyHeight = 556766;
+        consensus.magneticAnomalyHeight = 0; // DeVault: CTOR enforced from genesis
 
         // November 15, 2019 protocol upgrade
-        consensus.gravitonHeight = 609135;
+        consensus.gravitonHeight = 2000000000; // DeVault: DISABLED (no Schnorr-multisig/minimaldata); Phase-3 TBD
 
         // May 15, 2020 12:00:00 UTC protocol upgrade
-        consensus.phononHeight = 635258;
+        consensus.phononHeight = 2000000000; // DeVault: DISABLED (classic sigops, not sigchecks); Phase-3 TBD
 
         // Nov 15, 2020 12:00:00 UTC protocol upgrade
         consensus.axionActivationTime = 1605441600;
@@ -149,22 +149,22 @@ public:
         // we do not track this time (since it does not apply at all to the blockchain itself).
 
         // May 15, 2022 12:00:00 UTC protocol upgrade
-        consensus.upgrade8Height = 740237;
+        consensus.upgrade8Height = 2000000000; // DeVault: DISABLED (no 64-bit/introspection); Phase-3 TBD
 
         // May 15, 2023 12:00:00 UTC protocol upgrade (this is one less than the upgrade block itself)
-        consensus.upgrade9Height = 792772;
+        consensus.upgrade9Height = 2000000000; // DeVault: DISABLED (no CashTokens/p2sh32); Phase-3 TBD
 
         // May 15, 2024 12:00:00 UTC protocol upgrade (this is one less than the upgrade block itself)
-        consensus.upgrade10Height = 845890;
+        consensus.upgrade10Height = 2000000000; // DeVault: DISABLED (fixed 32MB, no ABLA/VM-limits); Phase-3 TBD
 
         // May 15, 2025 12:00:00 UTC protocol upgrade (this is one less than the first block mined under new rules)
-        consensus.upgrade11Height = 898373;
+        consensus.upgrade11Height = 2000000000; // DeVault: DISABLED (no BigInt); Phase-3 TBD
 
         // May 15, 2026 12:00:00 UTC protocol upgrade
-        consensus.upgrade12ActivationTime = 1778846400;
+        consensus.upgrade12ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // May 15, 2027 12:00:00 UTC tentative protocol upgrade
-        consensus.upgrade2027ActivationTime = 1810382400;
+        consensus.upgrade2027ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // Default limit for block size (in bytes)
         consensus.nDefaultConsensusBlockSize = DEFAULT_CONSENSUS_BLOCK_SIZE;
@@ -278,16 +278,16 @@ public:
         strNetworkID = CBaseChainParams::TESTNET;
         consensus.nSubsidyHalvingInterval = 210000;
         // 00000000040b4e986385315e14bee30ad876d8b47f748025b26683116d21aa65
-        consensus.BIP16Height = 514;
-        consensus.BIP34Height = 21111;
+        consensus.BIP16Height = 0; // DeVault: P2SH always-on (see GetNextBlockScriptFlags)
+        consensus.BIP34Height = 1; // DeVault: coinbase-height enforced from height 1
         consensus.BIP34Hash = BlockHash::fromHex(
             "0000000023b3a96d3484e5abb3755c413e7d41500f8e2a5c3f0dd01299cd8ef8");
         // 00000000007f6655f22f98e72ed80d8b06dc761d5da09df0fa1dc4be4f861eb6
-        consensus.BIP65Height = 581885;
+        consensus.BIP65Height = 0; // DeVault: CLTV always-on
         // 000000002104c8c45e99a8853285a3b592602a3ccde2b832481da85e9e4ba182
-        consensus.BIP66Height = 330776;
+        consensus.BIP66Height = 0; // DeVault: DERSIG always-on
         // 00000000025e930139bac5c6c31a403776da130831ab85be56578f3fa75369bb
-        consensus.CSVHeight = 770112;
+        consensus.CSVHeight = 0; // DeVault: CSV always-on
         consensus.powLimit = uint256S(
             "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         // two weeks
@@ -318,40 +318,40 @@ public:
         consensus.nZawyLwmaAveragingWindow = 72;
 
         // August 1, 2017 hard fork
-        consensus.uahfHeight = 1155875;
+        consensus.uahfHeight = 0; // DeVault: post-UAHF (always-on)
 
         // November 13, 2017 hard fork
-        consensus.daaHeight = 1188697;
+        consensus.daaHeight = 0; // DeVault: post-DAA (difficulty = LWMA)
 
         // November 15, 2018 hard fork
-        consensus.magneticAnomalyHeight = 1267996;
+        consensus.magneticAnomalyHeight = 0; // DeVault: CTOR enforced from genesis
 
         // November 15, 2019 protocol upgrade
-        consensus.gravitonHeight = 1341711;
+        consensus.gravitonHeight = 2000000000; // DeVault: DISABLED (no Schnorr-multisig/minimaldata); Phase-3 TBD
 
         // May 15, 2020 12:00:00 UTC protocol upgrade
-        consensus.phononHeight = 1378460;
+        consensus.phononHeight = 2000000000; // DeVault: DISABLED (classic sigops, not sigchecks); Phase-3 TBD
 
         // Nov 15, 2020 12:00:00 UTC protocol upgrade
         consensus.axionActivationTime = 1605441600;
 
         // May 15, 2022 12:00:00 UTC protocol upgrade
-        consensus.upgrade8Height = 1500205;
+        consensus.upgrade8Height = 2000000000; // DeVault: DISABLED (no 64-bit/introspection); Phase-3 TBD
 
         // May 15, 2023 12:00:00 UTC protocol upgrade (this is one less than the upgrade block itself)
-        consensus.upgrade9Height = 1552787;
+        consensus.upgrade9Height = 2000000000; // DeVault: DISABLED (no CashTokens/p2sh32); Phase-3 TBD
 
         // May 15, 2024 12:00:00 UTC protocol upgrade (this is one less than the upgrade block itself)
-        consensus.upgrade10Height = 1605520;
+        consensus.upgrade10Height = 2000000000; // DeVault: DISABLED (fixed 32MB, no ABLA/VM-limits); Phase-3 TBD
 
         // May 15, 2025 12:00:00 UTC protocol upgrade (this is one less than the first block mined under new rules)
-        consensus.upgrade11Height = 1658049;
+        consensus.upgrade11Height = 2000000000; // DeVault: DISABLED (no BigInt); Phase-3 TBD
 
         // May 15, 2026 12:00:00 UTC protocol upgrade
-        consensus.upgrade12ActivationTime = 1778846400;
+        consensus.upgrade12ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // May 15, 2027 12:00:00 UTC tentative protocol upgrade
-        consensus.upgrade2027ActivationTime = 1810382400;
+        consensus.upgrade2027ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // Default limit for block size (in bytes)
         consensus.nDefaultConsensusBlockSize = DEFAULT_CONSENSUS_BLOCK_SIZE;
@@ -443,18 +443,18 @@ public:
     CTestNet4Params() {
         strNetworkID = CBaseChainParams::TESTNET4;
         consensus.nSubsidyHalvingInterval = 210000;
-        consensus.BIP16Height = 1;
+        consensus.BIP16Height = 0; // DeVault: P2SH always-on (see GetNextBlockScriptFlags)
         // Note: Because BIP34Height is less than 17, clients will face an unusual corner case with BIP34 encoding.
         // The "correct" encoding for BIP34 blocks at height <= 16 uses OP_1 (0x81) through OP_16 (0x90) as a single
         // byte (i.e. "[shortest possible] encoded CScript format"), not a single byte with length followed by the
         // little-endian encoded version of the height as mentioned in BIP34. The BIP34 spec document itself ought to
         // be updated to reflect this.
         // https://github.com/bitcoin/bitcoin/pull/14633
-        consensus.BIP34Height = 2;
+        consensus.BIP34Height = 1; // DeVault: coinbase-height enforced from height 1
         consensus.BIP34Hash = BlockHash::fromHex("00000000b0c65b1e03baace7d5c093db0d6aac224df01484985ffd5e86a1a20c");
-        consensus.BIP65Height = 3;
-        consensus.BIP66Height = 4;
-        consensus.CSVHeight = 5;
+        consensus.BIP65Height = 0; // DeVault: CLTV always-on
+        consensus.BIP66Height = 0; // DeVault: DERSIG always-on
+        consensus.CSVHeight = 0; // DeVault: CSV always-on
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         // two weeks
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
@@ -475,16 +475,16 @@ public:
         consensus.defaultAssumeValid = ChainParamsConstants::TESTNET4_DEFAULT_ASSUME_VALID;
 
         // August 1, 2017 hard fork
-        consensus.uahfHeight = 6;
+        consensus.uahfHeight = 0; // DeVault: post-UAHF (always-on)
 
         // November 13, 2017 hard fork
-        consensus.daaHeight = 3000;
+        consensus.daaHeight = 0; // DeVault: post-DAA (difficulty = LWMA)
 
         // November 15, 2018 hard fork
-        consensus.magneticAnomalyHeight = 4000;
+        consensus.magneticAnomalyHeight = 0; // DeVault: CTOR enforced from genesis
 
         // November 15, 2019 protocol upgrade
-        consensus.gravitonHeight = 5000;
+        consensus.gravitonHeight = 2000000000; // DeVault: DISABLED (no Schnorr-multisig/minimaldata); Phase-3 TBD
 
         // May 15, 2020 12:00:00 UTC protocol upgrade
         // Note: We must set this to 0 here because "historical" sigop code has
@@ -499,28 +499,28 @@ public:
         //       implementations in their execution paths so they will need to
         //       use 0 here to be able to synch to this chain.
         //       See: https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node/-/issues/167
-        consensus.phononHeight = 0;
+        consensus.phononHeight = 2000000000; // DeVault: DISABLED (classic sigops, not sigchecks); Phase-3 TBD
 
         // Nov 15, 2020 12:00:00 UTC protocol upgrade
         consensus.axionActivationTime = 1605441600;
 
         // May 15, 2022 12:00:00 UTC protocol upgrade
-        consensus.upgrade8Height = 95464;
+        consensus.upgrade8Height = 2000000000; // DeVault: DISABLED (no 64-bit/introspection); Phase-3 TBD
 
         // May 15, 2023 12:00:00 UTC protocol upgrade (this is one less than the upgrade block itself)
-        consensus.upgrade9Height = 148043;
+        consensus.upgrade9Height = 2000000000; // DeVault: DISABLED (no CashTokens/p2sh32); Phase-3 TBD
 
         // May 15, 2024 12:00:00 UTC protocol upgrade (this is one less than the upgrade block itself)
-        consensus.upgrade10Height = 200740;
+        consensus.upgrade10Height = 2000000000; // DeVault: DISABLED (fixed 32MB, no ABLA/VM-limits); Phase-3 TBD
 
         // May 15, 2025 12:00:00 UTC protocol upgrade (this is one less than the first block mined under new rules)
-        consensus.upgrade11Height = 253318;
+        consensus.upgrade11Height = 2000000000; // DeVault: DISABLED (no BigInt); Phase-3 TBD
 
         // May 15, 2026 12:00:00 UTC protocol upgrade
-        consensus.upgrade12ActivationTime = 1778846400;
+        consensus.upgrade12ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // May 15, 2027 12:00:00 UTC tentative protocol upgrade
-        consensus.upgrade2027ActivationTime = 1810382400;
+        consensus.upgrade2027ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // Default limit for block size (in bytes) (testnet4 is smaller at 2MB)
         consensus.nDefaultConsensusBlockSize = 2 * ONE_MEGABYTE;
@@ -635,8 +635,8 @@ public:
     CScaleNetParams() {
         strNetworkID = CBaseChainParams::SCALENET;
         consensus.nSubsidyHalvingInterval = 210000;
-        consensus.BIP16Height = 1;
-        consensus.BIP34Height = 2;
+        consensus.BIP16Height = 0; // DeVault: P2SH always-on (see GetNextBlockScriptFlags)
+        consensus.BIP34Height = 1; // DeVault: coinbase-height enforced from height 1
         // Note: Because BIP34Height is less than 17, clients will face an unusual corner case with BIP34 encoding.
         // The "correct" encoding for BIP34 blocks at height <= 16 uses OP_1 (0x81) through OP_16 (0x90) as a single
         // byte (i.e. "[shortest possible] encoded CScript format"), not a single byte with length followed by the
@@ -644,9 +644,9 @@ public:
         // be updated to reflect this.
         // https://github.com/bitcoin/bitcoin/pull/14633
         consensus.BIP34Hash = BlockHash::fromHex("00000000c8c35eaac40e0089a83bf5c5d9ecf831601f98c21ed4a7cb511a07d8");
-        consensus.BIP65Height = 3;
-        consensus.BIP66Height = 4;
-        consensus.CSVHeight = 5;
+        consensus.BIP65Height = 0; // DeVault: CLTV always-on
+        consensus.BIP66Height = 0; // DeVault: DERSIG always-on
+        consensus.CSVHeight = 0; // DeVault: CSV always-on
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         // two weeks
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
@@ -667,16 +667,16 @@ public:
         consensus.defaultAssumeValid = ChainParamsConstants::SCALENET_DEFAULT_ASSUME_VALID;
 
         // August 1, 2017 hard fork
-        consensus.uahfHeight = 6;
+        consensus.uahfHeight = 0; // DeVault: post-UAHF (always-on)
 
         // November 13, 2017 hard fork
-        consensus.daaHeight = 3000;
+        consensus.daaHeight = 0; // DeVault: post-DAA (difficulty = LWMA)
 
         // November 15, 2018 hard fork
-        consensus.magneticAnomalyHeight = 4000;
+        consensus.magneticAnomalyHeight = 0; // DeVault: CTOR enforced from genesis
 
         // November 15, 2019 protocol upgrade
-        consensus.gravitonHeight = 5000;
+        consensus.gravitonHeight = 2000000000; // DeVault: DISABLED (no Schnorr-multisig/minimaldata); Phase-3 TBD
 
         // May 15, 2020 12:00:00 UTC protocol upgrade
         // Note: We must set this to 0 here because "historical" sigop code has
@@ -691,28 +691,28 @@ public:
         //       implementations in their execution paths so they will need to
         //       use 0 here to be able to synch to this chain.
         //       See: https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node/-/issues/167
-        consensus.phononHeight = 0;
+        consensus.phononHeight = 2000000000; // DeVault: DISABLED (classic sigops, not sigchecks); Phase-3 TBD
 
         // Nov 15, 2020 12:00:00 UTC protocol upgrade
         consensus.axionActivationTime = 1605441600;
 
         // May 15, 2022 12:00:00 UTC protocol upgrade
-        consensus.upgrade8Height = 10'006;
+        consensus.upgrade8Height = 2000000000; // DeVault: DISABLED (no 64-bit/introspection); Phase-3 TBD
 
         // May 15, 2023 12:00:00 UTC protocol upgrade
-        consensus.upgrade9Height = 10'006;
+        consensus.upgrade9Height = 2000000000; // DeVault: DISABLED (no CashTokens/p2sh32); Phase-3 TBD
 
         // May 15, 2024 12:00:00 UTC protocol upgrade
-        consensus.upgrade10Height = 10'006;
+        consensus.upgrade10Height = 2000000000; // DeVault: DISABLED (fixed 32MB, no ABLA/VM-limits); Phase-3 TBD
 
         // May 15, 2025 12:00:00 UTC protocol upgrade
-        consensus.upgrade11Height = 10'006;
+        consensus.upgrade11Height = 2000000000; // DeVault: DISABLED (no BigInt); Phase-3 TBD
 
         // May 15, 2026 12:00:00 UTC protocol upgrade
-        consensus.upgrade12ActivationTime = 1778846400;
+        consensus.upgrade12ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // May 15, 2027 12:00:00 UTC tentative protocol upgrade
-        consensus.upgrade2027ActivationTime = 1810382400;
+        consensus.upgrade2027ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // Default limit for block size (in bytes)
         consensus.nDefaultConsensusBlockSize = 256 * ONE_MEGABYTE;
@@ -795,18 +795,18 @@ public:
     CChipNetParams() {
         strNetworkID = CBaseChainParams::CHIPNET;
         consensus.nSubsidyHalvingInterval = 210000;
-        consensus.BIP16Height = 1;
+        consensus.BIP16Height = 0; // DeVault: P2SH always-on (see GetNextBlockScriptFlags)
         // Note: Because BIP34Height is less than 17, clients will face an unusual corner case with BIP34 encoding.
         // The "correct" encoding for BIP34 blocks at height <= 16 uses OP_1 (0x81) through OP_16 (0x90) as a single
         // byte (i.e. "[shortest possible] encoded CScript format"), not a single byte with length followed by the
         // little-endian encoded version of the height as mentioned in BIP34. The BIP34 spec document itself ought to
         // be updated to reflect this.
         // https://github.com/bitcoin/bitcoin/pull/14633
-        consensus.BIP34Height = 2;
+        consensus.BIP34Height = 1; // DeVault: coinbase-height enforced from height 1
         consensus.BIP34Hash = BlockHash::fromHex("00000000b0c65b1e03baace7d5c093db0d6aac224df01484985ffd5e86a1a20c");
-        consensus.BIP65Height = 3;
-        consensus.BIP66Height = 4;
-        consensus.CSVHeight = 5;
+        consensus.BIP65Height = 0; // DeVault: CLTV always-on
+        consensus.BIP66Height = 0; // DeVault: DERSIG always-on
+        consensus.CSVHeight = 0; // DeVault: CSV always-on
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         // two weeks
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60;
@@ -827,16 +827,16 @@ public:
         consensus.defaultAssumeValid = ChainParamsConstants::CHIPNET_DEFAULT_ASSUME_VALID;
 
         // August 1, 2017 hard fork
-        consensus.uahfHeight = 6;
+        consensus.uahfHeight = 0; // DeVault: post-UAHF (always-on)
 
         // November 13, 2017 hard fork
-        consensus.daaHeight = 3000;
+        consensus.daaHeight = 0; // DeVault: post-DAA (difficulty = LWMA)
 
         // November 15, 2018 hard fork
-        consensus.magneticAnomalyHeight = 4000;
+        consensus.magneticAnomalyHeight = 0; // DeVault: CTOR enforced from genesis
 
         // November 15, 2019 protocol upgrade
-        consensus.gravitonHeight = 5000;
+        consensus.gravitonHeight = 2000000000; // DeVault: DISABLED (no Schnorr-multisig/minimaldata); Phase-3 TBD
 
         // May 15, 2020 12:00:00 UTC protocol upgrade
         // Note: We must set this to 0 here because "historical" sigop code has
@@ -851,28 +851,28 @@ public:
         //       implementations in their execution paths so they will need to
         //       use 0 here to be able to synch to this chain.
         //       See: https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node/-/issues/167
-        consensus.phononHeight = 0;
+        consensus.phononHeight = 2000000000; // DeVault: DISABLED (classic sigops, not sigchecks); Phase-3 TBD
 
         // Nov 15, 2020 12:00:00 UTC protocol upgrade
         consensus.axionActivationTime = 1605441600;
 
         // May 15, 2022 12:00:00 UTC protocol upgrade
-        consensus.upgrade8Height = 95464;
+        consensus.upgrade8Height = 2000000000; // DeVault: DISABLED (no 64-bit/introspection); Phase-3 TBD
 
         // November 15, 2022 12:00:00 UTC; protocol upgrade activates 6 months early
-        consensus.upgrade9Height = 121956; // (one less than upgrade block)
+        consensus.upgrade9Height = 2000000000; // DeVault: DISABLED (no CashTokens/p2sh32); Phase-3 TBD
 
         // November 15, 2023 12:00:00 UTC; protocol upgrade activates 6 months early
-        consensus.upgrade10Height = 174519; // (one less than upgrade block)
+        consensus.upgrade10Height = 2000000000; // DeVault: DISABLED (fixed 32MB, no ABLA/VM-limits); Phase-3 TBD
 
         // November 15, 2024 12:00:00 UTC; protocol upgrade activates 6 months early
-        consensus.upgrade11Height = 227228; // (one less than upgrade block)
+        consensus.upgrade11Height = 2000000000; // DeVault: DISABLED (no BigInt); Phase-3 TBD
 
         // November 15, 2025 12:00:00 UTC; protocol upgrade activates 6 months early
-        consensus.upgrade12ActivationTime = 1763208000;
+        consensus.upgrade12ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // November 15, 2026 12:00:00 UTC; tentative protocol upgrade activates 6 months early
-        consensus.upgrade2027ActivationTime = 1794744000;
+        consensus.upgrade2027ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // Default limit for block size (in bytes) (chipnet is like testnet4 in that it is smaller at 2MB)
         consensus.nDefaultConsensusBlockSize = 2 * ONE_MEGABYTE;
@@ -987,17 +987,17 @@ public:
         strNetworkID = CBaseChainParams::REGTEST;
         consensus.nSubsidyHalvingInterval = 150;
         // always enforce P2SH BIP16 on regtest
-        consensus.BIP16Height = 0;
+        consensus.BIP16Height = 0; // DeVault: P2SH always-on (see GetNextBlockScriptFlags)
         // BIP34 has not activated on regtest (far in the future so block v1 are
         // not rejected in tests)
-        consensus.BIP34Height = 100000000;
+        consensus.BIP34Height = 1; // DeVault: coinbase-height enforced from height 1
         consensus.BIP34Hash = BlockHash();
         // BIP65 activated on regtest (Used in rpc activation tests)
-        consensus.BIP65Height = 1351;
+        consensus.BIP65Height = 0; // DeVault: CLTV always-on
         // BIP66 activated on regtest (Used in rpc activation tests)
-        consensus.BIP66Height = 1251;
+        consensus.BIP66Height = 0; // DeVault: DERSIG always-on
         // CSV activated on regtest (Used in rpc activation tests)
-        consensus.CSVHeight = 576;
+        consensus.CSVHeight = 0; // DeVault: CSV always-on
         consensus.powLimit = uint256S(
             "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         // two weeks
@@ -1031,40 +1031,40 @@ public:
         consensus.nZawyLwmaAveragingWindow = 72;
 
         // UAHF is always enabled on regtest.
-        consensus.uahfHeight = 0;
+        consensus.uahfHeight = 0; // DeVault: post-UAHF (always-on)
 
         // November 13, 2017 hard fork is always on on regtest.
-        consensus.daaHeight = 0;
+        consensus.daaHeight = 0; // DeVault: post-DAA (difficulty = LWMA)
 
         // November 15, 2018 hard fork is always on on regtest.
-        consensus.magneticAnomalyHeight = 0;
+        consensus.magneticAnomalyHeight = 0; // DeVault: CTOR enforced from genesis
 
         // November 15, 2019 protocol upgrade
-        consensus.gravitonHeight = 0;
+        consensus.gravitonHeight = 2000000000; // DeVault: DISABLED (no Schnorr-multisig/minimaldata); Phase-3 TBD
 
         // May 15, 2020 12:00:00 UTC protocol upgrade
-        consensus.phononHeight = 0;
+        consensus.phononHeight = 2000000000; // DeVault: DISABLED (classic sigops, not sigchecks); Phase-3 TBD
 
         // Nov 15, 2020 12:00:00 UTC protocol upgrade
         consensus.axionActivationTime = 1605441600;
 
         // May 15, 2022 12:00:00 UTC protocol upgrade
-        consensus.upgrade8Height = 0;
+        consensus.upgrade8Height = 2000000000; // DeVault: DISABLED (no 64-bit/introspection); Phase-3 TBD
 
         // May 15, 2023 12:00:00 UTC protocol upgrade
-        consensus.upgrade9Height = 0;
+        consensus.upgrade9Height = 2000000000; // DeVault: DISABLED (no CashTokens/p2sh32); Phase-3 TBD
 
         // May 15, 2024 12:00:00 UTC protocol upgrade
-        consensus.upgrade10Height = 0;
+        consensus.upgrade10Height = 2000000000; // DeVault: DISABLED (fixed 32MB, no ABLA/VM-limits); Phase-3 TBD
 
         // May 15, 2025 12:00:00 UTC protocol upgrade
-        consensus.upgrade11Height = 0;
+        consensus.upgrade11Height = 2000000000; // DeVault: DISABLED (no BigInt); Phase-3 TBD
 
         // May 15, 2026 12:00:00 UTC protocol upgrade
-        consensus.upgrade12ActivationTime = 1778846400;
+        consensus.upgrade12ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // May 15, 2027 12:00:00 UTC tentative protocol upgrade
-        consensus.upgrade2027ActivationTime = 1810382400;
+        consensus.upgrade2027ActivationTime = 9999999999; // DeVault: DISABLED; Phase-3 TBD
 
         // Default limit for block size (in bytes)
         consensus.nDefaultConsensusBlockSize = DEFAULT_CONSENSUS_BLOCK_SIZE;
