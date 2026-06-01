@@ -3820,9 +3820,13 @@ static bool ContextualCheckBlock(const CBlock &block, CValidationState &state,
         }
     }
 
-    // Enforce rule that the coinbase starts with serialized block height
+    // Enforce rule that the coinbase starts with serialized block height.
+    // DeVault enforces BIP34 from height 1 and encodes the height with CScriptNum::serialize
+    // (always a data push), whereas BCHN's ScriptInt encodes small values (1..16) as OP_N opcodes.
+    // This only matters for heights 1..16 (BCH/Bitcoin activated BIP34 far above 16), so match
+    // DeVault exactly here. See DeVault validation.cpp:3779.
     if (nHeight >= params.BIP34Height) {
-        CScript expect = CScript() << ScriptInt::fromIntUnchecked(nHeight);
+        CScript expect = CScript() << CScriptNum::serialize(nHeight);
         if (block.vtx[0]->vin[0].scriptSig.size() < expect.size() ||
             !std::equal(expect.begin(), expect.end(), block.vtx[0]->vin[0].scriptSig.begin())) {
             return state.DoS(100, false, REJECT_INVALID, "bad-cb-height", false, "block height mismatch in coinbase");
