@@ -14,6 +14,7 @@
 #include <uint256.h>
 #include <util/system.h>
 
+#include <algorithm>
 #include <atomic>
 
 static std::atomic<const CBlockIndex *> cachedAnchor{nullptr};
@@ -42,8 +43,9 @@ const CBlockIndex *GetASERTAnchorBlockCache() noexcept {
  *                is false (or for which pprev is nullptr). The return value may
  *                be pindex itself.
  */
-static const CBlockIndex *GetASERTAnchorBlock(const CBlockIndex *const pindex,
-                                              const Consensus::Params &params) {
+[[maybe_unused]] static const CBlockIndex *
+GetASERTAnchorBlock(const CBlockIndex *const pindex,
+                    const Consensus::Params &params) {
     assert(pindex);
 
     // - We check if we have a cached result, and if we do and it is really the
@@ -271,9 +273,10 @@ arith_uint256 CalculateASERT(const arith_uint256 &refTarget,
  * Compute the next required proof of work using the legacy Bitcoin difficulty
  * adjustment + Emergency Difficulty Adjustment (EDA).
  */
-static uint32_t GetNextEDAWorkRequired(const CBlockIndex *pindexPrev,
-                                       const CBlockHeader *pblock,
-                                       const Consensus::Params &params) {
+[[maybe_unused]] static uint32_t
+GetNextEDAWorkRequired(const CBlockIndex *pindexPrev,
+                       const CBlockHeader *pblock,
+                       const Consensus::Params &params) {
     // Only change once per difficulty adjustment interval
     uint32_t nHeight = pindexPrev->nHeight + 1;
     if (nHeight % params.DifficultyAdjustmentInterval() == 0) {
@@ -343,6 +346,74 @@ static uint32_t GetNextEDAWorkRequired(const CBlockIndex *pindexPrev,
     return nPow.GetCompact();
 }
 
+/**
+ * Compute the next required proof of work using DeVault's Zawy LWMA (Linearly
+ * Weighted Moving Average) difficulty algorithm. This REPLACES the Bitcoin Cash
+ * EDA / cw-144 / ASERT DAAs for the DeVault chain. Ported verbatim from legacy
+ * DeVault v1.2.1 src/pow.cpp; arith_uint256 arithmetic is bit-identical between the
+ * two trees (only brace-style/comments differ), so this reproduces the historical
+ * nBits exactly. The PoW *hash* remains SHA256d (RandomX is a Phase-3 fork feature).
+ */
+static uint32_t LwmaCalculateNextWorkRequired(const CBlockIndex *pindexPrev,
+                                              const CBlockHeader *pblock,
+                                              const Consensus::Params &params) {
+    // This cannot handle the genesis block and early blocks in general.
+    assert(pindexPrev);
+
+    // Special difficulty rule for testnet: if the new block's timestamp is more
+    // than 10 * spacing past the previous block, allow a min-difficulty block.
+    if (params.fPowAllowMinDifficultyBlocks &&
+        (pblock->GetBlockTime() >
+         pindexPrev->GetBlockTime() + 10 * params.nPowTargetSpacing)) {
+        return UintToArith256(params.powLimit).GetCompact();
+    }
+
+    const int nHeight = pindexPrev->nHeight + 1;
+
+    // Don't adjust difficulty until we have a full averaging window.
+    if (nHeight <= params.nZawyLwmaAveragingWindow) {
+        return UintToArith256(params.powLimit).GetCompact();
+    }
+
+    const int64_t T = params.nPowTargetSpacing;
+    const int N = params.nZawyLwmaAveragingWindow;
+    const int k = (N + 1) * T / 2;
+    const int dnorm = 10;
+
+    arith_uint256 sum_target;
+    int t = 0, j = 0;
+
+    // Loop through N most recent blocks.
+    for (int i = nHeight - N; i < nHeight; i++) {
+        const CBlockIndex *block = pindexPrev->GetAncestor(i);
+        const CBlockIndex *block_Prev = block->GetAncestor(i - 1);
+        int64_t solvetime = block->GetBlockTime() - block_Prev->GetBlockTime();
+
+        solvetime = std::min(6 * T, solvetime);
+
+        j++;
+        t += solvetime * j; // Weighted solvetime sum.
+
+        // Target sum divided by a factor, (k N^2). The factor is part of the final
+        // equation; we divide sum_target here to avoid potential overflow.
+        arith_uint256 target;
+        target.SetCompact(block->nBits);
+        sum_target += target / (k * N * N);
+    }
+    // Keep t reasonable in case strange solvetimes occurred.
+    if (t < N * k / dnorm) {
+        t = N * k / dnorm;
+    }
+
+    const arith_uint256 pow_limit = UintToArith256(params.powLimit);
+    arith_uint256 next_target = t * sum_target;
+    if (next_target > pow_limit) {
+        next_target = pow_limit;
+    }
+
+    return next_target.GetCompact();
+}
+
 uint32_t GetNextWorkRequired(const CBlockIndex *pindexPrev,
                              const CBlockHeader *pblock,
                              const Consensus::Params &params) {
@@ -354,21 +425,10 @@ uint32_t GetNextWorkRequired(const CBlockIndex *pindexPrev,
         return pindexPrev->nBits;
     }
 
-    if (IsAxionEnabled(params, pindexPrev)) {
-        const CBlockIndex *panchorBlock = nullptr;
-        if (!params.asertAnchorParams) {
-            // No hard-coded anchor params -- find the anchor block dynamically
-            panchorBlock = GetASERTAnchorBlock(pindexPrev, params);
-        }
-
-        return GetNextASERTWorkRequired(pindexPrev, pblock, params, panchorBlock);
-    }
-
-    if (IsDAAEnabled(params, pindexPrev)) {
-        return GetNextCashWorkRequired(pindexPrev, pblock, params);
-    }
-
-    return GetNextEDAWorkRequired(pindexPrev, pblock, params);
+    // DeVault uses Zawy's LWMA difficulty for all (non-regtest) blocks, replacing
+    // the BCH EDA/cw-144/ASERT DAAs (those remain defined above for the public API
+    // and unit-test vectors, but are not on the DeVault consensus path).
+    return LwmaCalculateNextWorkRequired(pindexPrev, pblock, params);
 }
 
 uint32_t CalculateNextWorkRequired(const CBlockIndex *pindexPrev,
