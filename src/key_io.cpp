@@ -6,6 +6,7 @@
 #include <key_io.h>
 
 #include <base58.h>
+#include <cashaddr.h>
 #include <cashaddrenc.h>
 #include <chainparams.h>
 #include <config.h>
@@ -20,6 +21,40 @@
 
 CKey DecodeSecret(const std::string &str) {
     CKey key;
+
+    // DeVault: canonical WIF is a cashaddr private key with the "dvtpriv" prefix
+    // (SECRET_TYPE=2; payload = the 32 raw key bytes, no compression flag). Ported verbatim from
+    // legacy dstencode.cpp::DecodeSecret. DeVault has no uncompressed keys, so a decoded key is
+    // always COMPRESSED. Try this first, then fall back to standard Base58Check WIF (interop).
+    {
+        auto [prefix, payload] =
+            cashaddr::Decode(str, Params().CashAddrSecretPrefix());
+        if (prefix == Params().CashAddrSecretPrefix() && !payload.empty()) {
+            // The 5-bit payload's trailing padding must be < 5 bits and all zero.
+            const size_t extrabits = (payload.size() * 5) % 8;
+            if (extrabits < 5 && (payload.back() & ((1u << extrabits) - 1)) == 0) {
+                std::vector<uint8_t> data;
+                data.reserve(payload.size() * 5 / 8);
+                if (ConvertBits<5, 8, false>(
+                        [&](uint8_t c) { data.push_back(c); },
+                        payload.begin(), payload.end()) &&
+                    data.size() == 33 &&            // 1 version byte + 32 key bytes
+                    (data[0] & 0x80) == 0 &&        // first (reserved) bit must be 0
+                    ((data[0] >> 3) & 0x1f) == 2) { // SECRET_TYPE
+                    key.Set(data.begin() + 1, data.end(), /*fCompressed=*/true);
+                }
+                memory_cleanse(data.data(), data.size());
+            }
+        }
+        if (!payload.empty()) {
+            memory_cleanse(payload.data(), payload.size());
+        }
+        if (key.IsValid()) {
+            return key;
+        }
+    }
+
+    // Standard Base58Check WIF (also accepted, for interop with non-DeVault tooling).
     std::vector<uint8_t> data;
     if (DecodeBase58Check(str, data, 34)) {
         const std::vector<uint8_t> &privkey_prefix =
@@ -41,13 +76,21 @@ CKey DecodeSecret(const std::string &str) {
 
 std::string EncodeSecret(const CKey &key) {
     assert(key.IsValid());
-    std::vector<uint8_t> data = Params().Base58Prefix(CChainParams::SECRET_KEY);
+    // DeVault [2B]: canonical WIF = cashaddr with the "dvtpriv" prefix, matching legacy
+    // dstencode.cpp::EncodeSecret byte-for-byte. version_byte = SECRET_TYPE<<3 (SECRET_TYPE=2 in
+    // legacy dstencode.h); the dvtpriv prefix disambiguates it from BCHN's type-2 token address.
+    // Payload = the 32 raw key bytes -- NO trailing compression flag (DeVault keys are always
+    // compressed). DecodeSecret still accepts standard Base58 WIF for interop.
+    static constexpr uint8_t SECRET_TYPE = 2;
+    std::vector<uint8_t> data = {uint8_t(SECRET_TYPE << 3)};
     data.insert(data.end(), key.begin(), key.end());
-    if (key.IsCompressed()) {
-        data.push_back(1);
-    }
-    std::string ret = EncodeBase58Check(data);
+    std::vector<uint8_t> converted;
+    converted.reserve((data.size() * 8 + 4) / 5);
+    ConvertBits<8, 5, true>([&](uint8_t c) { converted.push_back(c); },
+                            data.begin(), data.end());
+    std::string ret = cashaddr::Encode(Params().CashAddrSecretPrefix(), converted);
     memory_cleanse(data.data(), data.size());
+    memory_cleanse(converted.data(), converted.size());
     return ret;
 }
 
