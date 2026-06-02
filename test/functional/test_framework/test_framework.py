@@ -155,17 +155,18 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         config = configparser.ConfigParser()
         config.read_file(open(self.options.configfile, encoding='utf-8'))
         self.config = config
+        # DeVault: binaries are emitted as devaultd/devault-cli/devault-qt via CMake OUTPUT_NAME (2D).
         self.options.bitcoind = os.getenv(
-            "BITCOIND", default=config["environment"]["BUILDDIR"] + '/src/bitcoind' + config["environment"]["EXEEXT"])
+            "BITCOIND", default=config["environment"]["BUILDDIR"] + '/src/devaultd' + config["environment"]["EXEEXT"])
         if sys.platform == "darwin":
             self.options.bitcoinqt = os.getenv(
-                "BITCOINQT", default=config["environment"]["BUILDDIR"] + '/src/qt/BitcoinCashNode-Qt.app/Contents/MacOS/BitcoinCashNode-Qt' + config["environment"]["EXEEXT"])
+                "BITCOINQT", default=config["environment"]["BUILDDIR"] + '/src/qt/DeVault-Qt.app/Contents/MacOS/DeVault-Qt' + config["environment"]["EXEEXT"])
         else:
             self.options.bitcoinqt = os.getenv(
-                "BITCOINQT", default=config["environment"]["BUILDDIR"] + '/src/qt/bitcoin-qt' + config["environment"]["EXEEXT"])
+                "BITCOINQT", default=config["environment"]["BUILDDIR"] + '/src/qt/devault-qt' + config["environment"]["EXEEXT"])
 
         self.options.bitcoincli = os.getenv(
-            "BITCOINCLI", default=config["environment"]["BUILDDIR"] + '/src/bitcoin-cli' + config["environment"]["EXEEXT"])
+            "BITCOINCLI", default=config["environment"]["BUILDDIR"] + '/src/devault-cli' + config["environment"]["EXEEXT"])
         self.options.emulator = config["environment"]["EMULATOR"] or None
 
         os.environ['PATH'] = config['environment']['BUILDDIR'] + os.pathsep + \

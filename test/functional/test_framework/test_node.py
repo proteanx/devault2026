@@ -88,6 +88,11 @@ class TestNode():
         self.extra_args = extra_args
         self.default_args = [
             "-datadir=" + self.datadir,
+            # DeVault: the node's default config name is devault-v2.conf (safety rename, #2/2D),
+            # but the framework writes bitcoin.conf -> point the node at it explicitly so its
+            # rpcport/port/regtest settings are honoured (otherwise the node falls back to the
+            # mainnet RPC port 8332 and fails to start).
+            "-conf=bitcoin.conf",
             "-logtimemicros",
             "-debug",
             "-debugexclude=libevent",
