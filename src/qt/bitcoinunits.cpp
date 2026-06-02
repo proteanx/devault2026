@@ -37,11 +37,11 @@ bool BitcoinUnits::valid(int unit) {
 QString BitcoinUnits::ticker(int unit) {
     switch (unit) {
         case BCH:
-            return QString("BCH");
+            return QString("DVT");
         case mBCH:
-            return QString("mBCH");
+            return QString("mDVT");
         case uBCH:
-            return QString::fromUtf8("μBCH");
+            return QString::fromUtf8("μDVT");
         case SAT:
             return QString("sat");
         default:
@@ -53,11 +53,11 @@ QString BitcoinUnits::description(int unit) {
     constexpr auto thinUtf8 = BitcoinSpaces::thinUtf8;
     switch (unit) {
         case BCH:
-            return QObject::tr("bitcoins");
+            return QObject::tr("DeVault");
         case mBCH:
-            return QObject::tr("millibitcoins") + " (1 / 1" + thinUtf8 + "000)";
+            return QObject::tr("milli-DeVault") + " (1 / 1" + thinUtf8 + "000)";
         case uBCH:
-            return QObject::tr("microbitcoins/bits") + " (1 / 1" + thinUtf8 + "000" + thinUtf8 + "000)";
+            return QObject::tr("micro-DeVault/bits") + " (1 / 1" + thinUtf8 + "000" + thinUtf8 + "000)";
         case SAT:
             return QObject::tr("satoshis") + " (1 / 100" + thinUtf8 + "000" + thinUtf8 + "000)";
         default:

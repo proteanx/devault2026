@@ -50,9 +50,9 @@
       <item>
        <widget class="QWidget" name="contentWidget" native="true">
         <property name="styleSheet">
-         <string notr="true">#contentWidget { background: rgba(255,255,255,240); border-radius: 6px; }
+         <string notr="true">#contentWidget { background: rgba(30,30,30,240); border-radius: 6px; }
 
-QLabel { color: rgb(40,40,40);  }</string>
+QLabel { color: rgb(211,211,211);  }</string>
         </property>
         <layout class="QVBoxLayout" name="verticalLayoutSub" stretch="1,0,0,0">
          <property name="spacing">
