@@ -70,6 +70,14 @@ qt5_wrap_ui(UI_GENERATED_HEADERS
 	forms/sendcoinsentry.ui
 	forms/signverifymessagedialog.ui
 	forms/transactiondescdialog.ui
+	forms/startoptions.ui
+	forms/startoptionsdialog.ui
+	forms/startoptionsmain.ui
+	forms/startoptionsrestore.ui
+	forms/startoptionsrevealed.ui
+	forms/startoptionssort.ui
+	forms/revealphrase.ui
+	forms/setpassphrasedialog.ui
 )
 set(CMAKE_CURRENT_BINARY_DIR ${SAVE_CMAKE_CURRENT_BINARY_DIR})
 
@@ -102,6 +110,14 @@ add_library(bitcoin-qt-base
 	qvaluecombobox.cpp
 	rpcconsole.cpp
 	splashscreen.cpp
+	startoptions.cpp
+	startoptionsdialog.cpp
+	startoptionsmain.cpp
+	startoptionsrestore.cpp
+	startoptionsrevealed.cpp
+	startoptionssort.cpp
+	revealphrase.cpp
+	setpassphrasedialog.cpp
 	trafficgraphwidget.cpp
 	utilitydialog.cpp
 

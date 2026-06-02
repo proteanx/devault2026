@@ -9,8 +9,10 @@
 #include <support/cleanse.h>
 #include <support/lockedpool.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 //
 // Allocator that locks its contents from being paged
@@ -48,3 +50,7 @@ struct secure_allocator : public std::allocator<T> {
 
 // This is exactly like std::string, but with a custom allocator.
 using SecureString = std::basic_string<char, std::char_traits<char>, secure_allocator<char>>;
+
+// DeVault: a std::vector with the secure (zeroing) allocator. Used by the GUI seed-phrase
+// dialogs (qt/revealphrase). Matches legacy DeVault's support/allocators/secure.h typedef.
+using SecureVector = std::vector<uint8_t, secure_allocator<uint8_t>>;
