@@ -236,7 +236,9 @@ BOOST_AUTO_TEST_CASE(isupgrade11enabled) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(isupgrade12enabled) {
+// DeVault disabled BCH upgrade12 (2026) / upgrade2027 — set to far-future sentinels in 1E.
+// These activation tests assert those upgrades activate at specific heights, so they are N/A.
+BOOST_AUTO_TEST_CASE(isupgrade12enabled, *boost::unit_test::disabled()) {
     // test with no hard-coded activation height (activation based on MTP)
     const auto pparams = CreateChainParams(CBaseChainParams::MAIN);
     const Consensus::Params &params = pparams->GetConsensus();
@@ -265,7 +267,7 @@ BOOST_AUTO_TEST_CASE(isupgrade12enabled) {
 
 // Test that the upgrade12 activation height tracker mechanism works, even if examining blocks that are not the
 // active chain.
-BOOST_AUTO_TEST_CASE(test_upgrade12_activation_block_tracking) {
+BOOST_AUTO_TEST_CASE(test_upgrade12_activation_block_tracking, *boost::unit_test::disabled()) {
     LOCK(cs_main); // needed to access the g_upgrade12_block_tracker and ::ChainActive()
     CBlockIndex * const origTip = ::ChainActive().Tip();
     const auto pparams = CreateChainParams(CBaseChainParams::MAIN);
@@ -377,7 +379,7 @@ BOOST_AUTO_TEST_CASE(test_upgrade12_activation_block_tracking) {
     BOOST_CHECK(IsUpgrade12Enabled(params, block) && !IsUpgrade12Enabled(params, block->pprev));
 }
 
-BOOST_AUTO_TEST_CASE(isupgrade2027enabled) {
+BOOST_AUTO_TEST_CASE(isupgrade2027enabled, *boost::unit_test::disabled()) {
     // test with no hard-coded activation height (activation based on MTP)
     const auto pparams = CreateChainParams(CBaseChainParams::MAIN);
     const Consensus::Params &params = pparams->GetConsensus();
@@ -406,7 +408,7 @@ BOOST_AUTO_TEST_CASE(isupgrade2027enabled) {
 
 // Test that the upgrade2027 activation height tracker mechanism works, even if examining blocks that are not the
 // active chain.
-BOOST_AUTO_TEST_CASE(test_upgrade2027_activation_block_tracking) {
+BOOST_AUTO_TEST_CASE(test_upgrade2027_activation_block_tracking, *boost::unit_test::disabled()) {
     LOCK(cs_main); // needed to access the g_upgrade2027_block_tracker and ::ChainActive()
     CBlockIndex * const origTip = ::ChainActive().Tip();
     const auto pparams = CreateChainParams(CBaseChainParams::MAIN);

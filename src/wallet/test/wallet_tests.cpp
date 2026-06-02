@@ -91,7 +91,8 @@ BOOST_FIXTURE_TEST_CASE(rescan, TestChain100Setup) {
         BOOST_CHECK(result.failed_block.IsNull());
         BOOST_CHECK_EQUAL(result.stop_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.stop_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(wallet.GetImmatureBalance(), 100 * COIN);
+        // DeVault regtest subsidy is 500 coins/block (10x BCH's 50); 2 coinbases = 1000.
+        BOOST_CHECK_EQUAL(wallet.GetImmatureBalance(), 1000 * COIN);
     }
 
     // Prune the older block file.
@@ -112,7 +113,7 @@ BOOST_FIXTURE_TEST_CASE(rescan, TestChain100Setup) {
         BOOST_CHECK_EQUAL(result.failed_block, oldTip->GetBlockHash());
         BOOST_CHECK_EQUAL(result.stop_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.stop_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(wallet.GetImmatureBalance(), 50 * COIN);
+        BOOST_CHECK_EQUAL(wallet.GetImmatureBalance(), 500 * COIN);
     }
 
     // Prune the remaining block file.
@@ -308,7 +309,7 @@ BOOST_FIXTURE_TEST_CASE(coin_mark_dirty_immature_credit, TestChain100Setup) {
     // credit amount is calculated.
     wtx.MarkDirty();
     wallet.AddKeyPubKey(coinbaseKey, coinbaseKey.GetPubKey());
-    BOOST_CHECK_EQUAL(wtx.GetImmatureCredit(*locked_chain), 50 * COIN);
+    BOOST_CHECK_EQUAL(wtx.GetImmatureCredit(*locked_chain), 500 * COIN);
 }
 
 static int64_t AddTx(CWallet &wallet, uint32_t lockTime, int64_t mockTime,
@@ -472,11 +473,11 @@ BOOST_FIXTURE_TEST_CASE(ListCoins, ListCoinsTestingSetup) {
                       coinbaseAddress);
     BOOST_CHECK_EQUAL(list.begin()->second.size(), 1U);
 
-    // Check initial balance from one mature coinbase transaction.
-    BOOST_CHECK_EQUAL(50 * COIN, wallet->GetAvailableBalance());
+    // Check initial balance from one mature coinbase transaction (DeVault regtest subsidy = 500).
+    BOOST_CHECK_EQUAL(500 * COIN, wallet->GetAvailableBalance());
 
     // Check that wallet->GetBalance returns the same thing
-    BOOST_CHECK_EQUAL(50 * COIN, wallet->GetBalance());
+    BOOST_CHECK_EQUAL(500 * COIN, wallet->GetBalance());
 
     // Add a transaction creating a change address, and confirm ListCoins still
     // returns the coin associated with the change address underneath the
@@ -530,18 +531,20 @@ BOOST_FIXTURE_TEST_CASE(FastTransaction, ListCoinsTestingSetup) {
     for (uint8_t i=0; i<2; i++) {
         CoinSelectionHint coinsel(static_cast<CoinSelectionHint>(i));
 
-        BOOST_CHECK(wallet->GetBalance() == 50 * COIN);
+        // DeVault regtest subsidy is 500 coins/block (10x BCH's 50); amounts scaled 10x so the
+        // balance returns to the starting value after the four spends (loop invariant).
+        BOOST_CHECK(wallet->GetBalance() == 500 * COIN);
 
-        // Each AddTx call will spend some coins then mine a block, adding another 50 coins
-        AddTx(CRecipient{GetScriptForRawPubKey({}),   1 * COIN, {}, true /* subtract fee */}, coinsel);
-        BOOST_CHECK(wallet->GetBalance() == 99 * COIN);
-        AddTx(CRecipient{GetScriptForRawPubKey({}),   1 * COIN, {}, true /* subtract fee */}, coinsel);
-        BOOST_CHECK(wallet->GetBalance() == 148 * COIN);
-        AddTx(CRecipient{GetScriptForRawPubKey({}),  51 * COIN, {}, true /* subtract fee */}, coinsel);
-        BOOST_CHECK(wallet->GetBalance() == 147 * COIN);
-        AddTx(CRecipient{GetScriptForRawPubKey({}), 147 * COIN, {}, true /* subtract fee */}, coinsel);
+        // Each AddTx call will spend some coins then mine a block, adding another 500 coins
+        AddTx(CRecipient{GetScriptForRawPubKey({}),   10 * COIN, {}, true /* subtract fee */}, coinsel);
+        BOOST_CHECK(wallet->GetBalance() == 990 * COIN);
+        AddTx(CRecipient{GetScriptForRawPubKey({}),   10 * COIN, {}, true /* subtract fee */}, coinsel);
+        BOOST_CHECK(wallet->GetBalance() == 1480 * COIN);
+        AddTx(CRecipient{GetScriptForRawPubKey({}),  510 * COIN, {}, true /* subtract fee */}, coinsel);
+        BOOST_CHECK(wallet->GetBalance() == 1470 * COIN);
+        AddTx(CRecipient{GetScriptForRawPubKey({}), 1470 * COIN, {}, true /* subtract fee */}, coinsel);
 
-        BOOST_CHECK(wallet->GetBalance() == 50 * COIN);
+        BOOST_CHECK(wallet->GetBalance() == 500 * COIN);
     }
 }
 
@@ -624,7 +627,10 @@ struct Upgrade9NotActivatedTestingSetup : ListCoinsTestingSetup {
     }
 };
 
-BOOST_FIXTURE_TEST_CASE(wallet_bip69, Upgrade9NotActivatedTestingSetup) {
+// Disabled: per its own comment, this test injects CashToken (upgrade9) data into txns to test BIP69
+// sorting with token data present. DeVault keeps upgrade9 permanently inactive (tokens are a Phase-4
+// feature), so the token-bearing blocks don't connect here. Re-enable when Phase 4 wires up tokens.
+BOOST_FIXTURE_TEST_CASE(wallet_bip69, Upgrade9NotActivatedTestingSetup, *boost::unit_test::disabled()) {
     // Note: The entire point of this test is to *just* test tx sorting with/without bip69 enabled when token data is
     // present/absent, and as such we didn't bother creating consensus-respecting CashToken txns for this test (which
     // is why this test requires upgrade9 be disabled).
@@ -860,7 +866,9 @@ struct Upgrade9ActivatedTestingSetup : ListCoinsTestingSetup {
 };
 
 /// Test basic support in wallet for processing tokens (requires upgrade9 to work correctly)
-BOOST_FIXTURE_TEST_CASE(wallet_tokens, Upgrade9ActivatedTestingSetup) {
+// Disabled: requires upgrade9 (CashTokens) ACTIVE, which DeVault never activates (Phase-4 feature).
+// The Upgrade9ActivatedTestingSetup fixture cannot reach an activated state on DeVault. Re-enable in Phase 4.
+BOOST_FIXTURE_TEST_CASE(wallet_tokens, Upgrade9ActivatedTestingSetup, *boost::unit_test::disabled()) {
     CCoinControl allIncludingTokens;
     allIncludingTokens.m_allow_tokens = true;
 

@@ -321,10 +321,21 @@ BOOST_AUTO_TEST_CASE(test_encode_address) {
         "bitcoincash:rpm2qsznhks23z7629mms6s4cwef74vcwv59yeyr7n",
         "bitcoincash:rr95sy3j9xwd2ap32xkykttr4cvcu7as4yl0zg2vc2",
         "bitcoincash:rqq3728yw0y47sqn6l2na30mcw6zm78dzqnkt7v7wd"};
+    // Same payloads encoded under DeVault's `devault:` prefix (what EncodeCashAddr(dst, *params)
+    // produces, since *params is the DeVault chain). The bitcoincash:/bchtest: vectors above stay
+    // for the explicit-prefix checks that test the prefix-agnostic codec.
+    std::vector<std::string> devault_pubkey = {
+        "devault:qpm2qsznhks23z7629mms6s4cwef74vcwvztjeqp4y",
+        "devault:qr95sy3j9xwd2ap32xkykttr4cvcu7as4yfp5gwwna",
+        "devault:qqq3728yw0y47sqn6l2na30mcw6zm78dzq9ca7gu96"};
+    std::vector<std::string> devault_script = {
+        "devault:ppm2qsznhks23z7629mms6s4cwef74vcwv4w0k8zwe",
+        "devault:pr95sy3j9xwd2ap32xkykttr4cvcu7as4y7yf8fdgq",
+        "devault:pqq3728yw0y47sqn6l2na30mcw6zm78dzqjaq30l78"};
 
     for (size_t i = 0; i < hash.size(); ++i) {
         const CTxDestination dstKey = CKeyID(uint160(hash[i]));
-        BOOST_CHECK_EQUAL(pubkey[i], EncodeCashAddr(dstKey, *params));
+        BOOST_CHECK_EQUAL(devault_pubkey[i], EncodeCashAddr(dstKey, *params));
 
         CashAddrContent keyContent{PUBKEY_TYPE, hash[i]};
         BOOST_CHECK_EQUAL(pubkey[i], EncodeCashAddr("bitcoincash", keyContent));
@@ -335,7 +346,7 @@ BOOST_AUTO_TEST_CASE(test_encode_address) {
         BOOST_CHECK(tokenKeyContent.IsTokenAwareType());
 
         const CTxDestination dstScript = ScriptID(uint160(hash[i]));
-        BOOST_CHECK_EQUAL(script[i], EncodeCashAddr(dstScript, *params));
+        BOOST_CHECK_EQUAL(devault_script[i], EncodeCashAddr(dstScript, *params));
 
         CashAddrContent scriptContent{SCRIPT_TYPE, hash[i]};
         BOOST_CHECK_EQUAL(script[i], EncodeCashAddr("bitcoincash", scriptContent));

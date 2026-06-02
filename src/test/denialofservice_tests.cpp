@@ -171,7 +171,10 @@ BOOST_AUTO_TEST_CASE(stale_tip_peer_management) {
         BOOST_CHECK(node->fDisconnect == false);
     }
 
-    SetMockTime(GetTime() + 3 * consensusParams.nPowTargetSpacing + 1);
+    // DeVault's 120s target spacing makes 3*spacing (360s) shorter than net_processing's 10-minute
+    // STALE_CHECK_INTERVAL, so CheckForStaleTipAndEvictPeers would no-op (unlike BCH's 600s spacing).
+    // Advance past BOTH the check interval and the tip-stale threshold (3*spacing).
+    SetMockTime(GetTime() + 10 * 60 + 3 * consensusParams.nPowTargetSpacing + 1);
 
     // Now tip should definitely be stale, and we should look for an extra
     // outbound peer

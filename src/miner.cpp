@@ -210,7 +210,10 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn, double timeLimitSe
     coinbaseTx.vout.resize(1);
     coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
     coinbaseTx.vout[0].nValue = nFees + GetBlockSubsidy(nHeight, consensusParams);
-    coinbaseTx.vin[0].scriptSig = CScript() << ScriptInt::fromIntUnchecked(nHeight) << OP_0;
+    // DeVault encodes the BIP34 coinbase height with CScriptNum::serialize (always a
+    // data push) and enforces BIP34 from height 1; build the coinbase to match what
+    // ContextualCheckBlock expects (differs from BCHN's ScriptInt only for heights 1..16).
+    coinbaseTx.vin[0].scriptSig = CScript() << CScriptNum::serialize(nHeight) << OP_0;
 
     if (const uint64_t minTxSize = GetMinimumTxSize(consensusParams, pindexPrev)) {
         const uint64_t coinbaseSize = ::GetSerializeSize(coinbaseTx, PROTOCOL_VERSION);
@@ -448,7 +451,8 @@ void IncrementExtraNonce(CBlock *pblock, const CBlockIndex *pindexPrev, const Co
     unsigned int nHeight = pindexPrev->nHeight + 1;
     CMutableTransaction txCoinbase(*pblock->vtx[0]);
     txCoinbase.vin[0].scriptSig =
-        (CScript() << ScriptInt::fromIntUnchecked(nHeight)
+        // DeVault BIP34 height encoding (CScriptNum::serialize, matching validation).
+        (CScript() << CScriptNum::serialize(nHeight)
                    << CScriptNum::fromIntUnchecked(nExtraNonce)
                    << getEBSig(nConsensusCurrentBlockSizeLimit)) +
         COINBASE_FLAGS;

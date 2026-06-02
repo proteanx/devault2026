@@ -51,7 +51,11 @@
 #include <utility>
 #include <vector>
 
-BOOST_FIXTURE_TEST_SUITE(token_tests, BasicTestingSetup)
+// CashTokens are not consensus-active on DeVault yet — token activation is a Phase-4 hard-fork
+// feature (on-chain-data NFTs). The token-parsing code is retained (1E), but these BCH token
+// CONSENSUS tests assume tokens are active, so the suite is disabled until Phase 4 wires up
+// DeVault's token activation height (at which point these get re-enabled / re-vectored).
+BOOST_FIXTURE_TEST_SUITE(token_tests, BasicTestingSetup, *boost::unit_test::disabled())
 
 static std::string GetRandomScriptPubKeyHexForAPubKey(const CPubKey destinationPubKey,
                                                       CScript *script_out = nullptr,

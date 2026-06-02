@@ -25,52 +25,37 @@
 
 BOOST_FIXTURE_TEST_SUITE(validation_tests, TestingSetup)
 
-static void TestBlockSubsidyHalvings(const Consensus::Params &consensusParams) {
-    int maxHalvings = 64;
-    Amount nInitialSubsidy = 50 * COIN;
-
-    // for height == 0
-    Amount nPreviousSubsidy = 2 * nInitialSubsidy;
-    BOOST_CHECK_EQUAL(nPreviousSubsidy, 2 * nInitialSubsidy);
-    for (int nHalvings = 0; nHalvings < maxHalvings; nHalvings++) {
-        int nHeight = nHalvings * consensusParams.nSubsidyHalvingInterval;
-        Amount nSubsidy = GetBlockSubsidy(nHeight, consensusParams);
-        BOOST_CHECK(nSubsidy <= nInitialSubsidy);
-        BOOST_CHECK_EQUAL(nSubsidy, nPreviousSubsidy / 2);
-        nPreviousSubsidy = nSubsidy;
-    }
-    BOOST_CHECK_EQUAL(
-        GetBlockSubsidy(maxHalvings * consensusParams.nSubsidyHalvingInterval,
-                        consensusParams),
-        Amount::zero());
-}
-
-static void TestBlockSubsidyHalvings(int nSubsidyHalvingInterval) {
-    Consensus::Params consensusParams;
-    consensusParams.nSubsidyHalvingInterval = nSubsidyHalvingInterval;
-    TestBlockSubsidyHalvings(consensusParams);
-}
-
-BOOST_AUTO_TEST_CASE(block_subsidy_test) {
+// DeVault uses the "Shark" inflation curve (1G), NOT Bitcoin halving: the subsidy starts at the
+// initial mining reward, ramps to a 1.5x peak at half a year, then decays ~1/height and stays
+// positive forever (DeVault is perpetually inflationary). Validate those properties against the
+// real chainparams. The Shark curve is also validated end-to-end by M2 (total_amount over all
+// 1,696,136 blocks matches the oracle exactly).
+BOOST_AUTO_TEST_CASE(block_subsidy_shark_curve_test) {
     const auto chainParams = CreateChainParams(CBaseChainParams::MAIN);
-    // As in main
-    TestBlockSubsidyHalvings(chainParams->GetConsensus());
-    // As in regtest
-    TestBlockSubsidyHalvings(150);
-    // Just another interval
-    TestBlockSubsidyHalvings(1000);
-}
+    const Consensus::Params &cp = chainParams->GetConsensus();
+    const int64_t initial = cp.nInitialMiningRewardInCoins;
+    const int64_t peakHeight = cp.nBlocksPerYear / 2; // peak at half a year
+    const Amount initialSubsidy = int64_t(initial) * COIN;
+    const Amount peakSubsidy = int64_t(initial + initial / 2) * COIN; // 1.5x
 
-BOOST_AUTO_TEST_CASE(subsidy_limit_test) {
-    const auto chainParams = CreateChainParams(CBaseChainParams::MAIN);
-    Amount nSum = Amount::zero();
-    for (int nHeight = 0; nHeight < 14000000; nHeight += 1000) {
-        Amount nSubsidy = GetBlockSubsidy(nHeight, chainParams->GetConsensus());
-        BOOST_CHECK(nSubsidy <= 50 * COIN);
-        nSum += 1000 * nSubsidy;
-        BOOST_CHECK(MoneyRange(nSum));
+    // Genesis-era subsidy is exactly the initial reward.
+    BOOST_CHECK_EQUAL(GetBlockSubsidy(0, cp), initialSubsidy);
+    // Ramps up to a 1.5x peak at half a year.
+    BOOST_CHECK(GetBlockSubsidy(peakHeight / 2, cp) > initialSubsidy);
+    BOOST_CHECK_EQUAL(GetBlockSubsidy(peakHeight, cp), peakSubsidy);
+    // Decays after the peak (strictly decreasing once past it).
+    BOOST_CHECK(GetBlockSubsidy(2 * peakHeight, cp) < peakSubsidy);
+    BOOST_CHECK(GetBlockSubsidy(10 * peakHeight, cp) <
+                GetBlockSubsidy(2 * peakHeight, cp));
+
+    // Positive, bounded and crash-free at every height the chain may ever reach
+    // (the curve never halves to zero, unlike Bitcoin).
+    for (int64_t h : {int64_t(1), int64_t(1000), int64_t(100000),
+                      int64_t(1000000), int64_t(5000000), int64_t(14000000)}) {
+        const Amount s = GetBlockSubsidy(h, cp);
+        BOOST_CHECK(s > Amount::zero());
+        BOOST_CHECK(MoneyRange(s));
     }
-    BOOST_CHECK_EQUAL(nSum, int64_t(2099999997690000LL) * SATOSHI);
 }
 
 static CBlock makeLargeDummyBlock(const size_t num_tx) {

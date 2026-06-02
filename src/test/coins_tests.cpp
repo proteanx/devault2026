@@ -319,8 +319,11 @@ BOOST_AUTO_TEST_CASE(updatecoins_simulation_test) {
             CMutableTransaction tx;
             tx.vin.resize(1);
             tx.vout.resize(1);
-            // Keep txs unique unless intended to duplicate.
-            tx.vout[0].nValue = i * SATOSHI;
+            // Keep txs unique unless intended to duplicate. Use spock-aligned
+            // values (i spocks): DeVault quantizes UTXO amounts up to a spock on
+            // entry (AddCoins, 1F), so non-aligned values would diverge from this
+            // reference model when read back. i spocks stays unique per i.
+            tx.vout[0].nValue = i * int64_t(SPOCK_SATS) * SATOSHI;
             // Random sizes so we can test memory usage accounting
             tx.vout[0].scriptPubKey.assign(InsecureRand32() & 0x3F, 0);
             unsigned int height = InsecureRand32();

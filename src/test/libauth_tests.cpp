@@ -110,7 +110,11 @@ bool ran2022 = false, ran2023 = false, ran2025 = false, ran2026 = false;
 } // namespace
 
 
-BOOST_AUTO_TEST_SUITE(libauth_tests)
+// DeVault forked from BCH (ABC 0.20) and does NOT carry BCH's later upgrades — 1E set
+// graviton/phonon/upgrade8..12 to far-future sentinels. The libauth suite is the BCH spec
+// "regression" test-vector harness for exactly those upgrades (2022/2023/2025/2026), so it
+// is not applicable to DeVault and is disabled here.
+BOOST_AUTO_TEST_SUITE(libauth_tests, *boost::unit_test::disabled())
 
 BOOST_FIXTURE_TEST_CASE(regression_2022, Upgrade12OverrideTestingSetup) {
     SetUpgrade9Active(false); // needs to be forced off for this series of tests
