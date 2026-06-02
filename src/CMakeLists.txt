@@ -709,6 +709,8 @@ endif()
 # bitcoin-cli
 if(BUILD_BITCOIN_CLI)
   add_executable(bitcoin-cli bitcoin-cli.cpp)
+  # DeVault rebrand: emit the binary as `devault-cli` (target name unchanged).
+  set_target_properties(bitcoin-cli PROPERTIES OUTPUT_NAME devault-cli)
   if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     target_sources(bitcoin-cli PRIVATE bitcoin-cli-res.rc)
   endif()
@@ -724,6 +726,8 @@ endif()
 # bitcoin-tx
 if(BUILD_BITCOIN_TX)
   add_executable(bitcoin-tx bitcoin-tx.cpp)
+  # DeVault rebrand: emit the binary as `devault-tx` (target name unchanged).
+  set_target_properties(bitcoin-tx PROPERTIES OUTPUT_NAME devault-tx)
   if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     target_sources(bitcoin-tx PRIVATE bitcoin-tx-res.rc)
   endif()
@@ -739,6 +743,9 @@ endif()
 # bitcoind
 if(BUILD_BITCOIN_DAEMON)
   add_executable(bitcoind bitcoind.cpp)
+  # DeVault rebrand: emit the binary as `devaultd` (drop-in name for tooling).
+  # The CMake target stays `bitcoind` so internal deps/build targets are intact.
+  set_target_properties(bitcoind PROPERTIES OUTPUT_NAME devaultd)
   target_link_libraries(bitcoind server)
   if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     target_sources(bitcoind PRIVATE bitcoind-res.rc)

@@ -259,16 +259,16 @@ public:
             }};
 
         // Data as of block
-        // 000000000000000000cf9718a045f88b75aca57e656e9c29482f626b1de7c7bc
-        // (height 930654).
+        // 0000000000003ef7702938208eb6ac2218fd0fd3f239f50b3268aa6b67195e02
+        // (height 1696141).
         chainTxData = ChainTxData{
             // UNIX timestamp of last known number of transactions.
-            1766496206,
+            1780273943,
             // Total number of transactions between genesis and that timestamp
             // (the tx=... number in the ChainStateFlushed debug.log lines)
-            413089131,
+            1800000,
             // Estimated number of transactions per second after that timestamp.
-            0.382,
+            0.008,
         };
     }
 };

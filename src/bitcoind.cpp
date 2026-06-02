@@ -99,7 +99,7 @@ static bool AppInit(int argc, char *argv[]) {
         if (gArgs.IsArgSet("-version")) {
             strUsage += FormatParagraph(LicenseInfo());
         } else {
-            strUsage += "\nUsage:  bitcoind [options]                     "
+            strUsage += "\nUsage:  devaultd [options]                     "
                         "Start " PACKAGE_NAME " Daemon\n";
 
             strUsage += "\n" + gArgs.GetHelpMessage();

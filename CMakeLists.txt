@@ -10,17 +10,17 @@ set(CMAKE_USER_MAKE_RULES_OVERRIDE
 
 project(bitcoin-cash-node
 	VERSION 29.0.0
-	DESCRIPTION "Bitcoin Cash Node is a full node implementation of the Bitcoin Cash protocol."
-	HOMEPAGE_URL "https://www.bitcoincashnode.org"
+	DESCRIPTION "DeVault is a full node implementation of the DeVault protocol."
+	HOMEPAGE_URL "https://www.devault.cc"
 )
 
 # Package information
-set(PACKAGE_NAME "Bitcoin Cash Node")
+set(PACKAGE_NAME "DeVault Core")
 
 # Copyright
-set(COPYRIGHT_YEAR 2025)
+set(COPYRIGHT_YEAR 2026)
 set(COPYRIGHT_HOLDERS "The %s developers")
-set(COPYRIGHT_HOLDERS_SUBSTITUTION Bitcoin)
+set(COPYRIGHT_HOLDERS_SUBSTITUTION DeVault)
 string(REPLACE "%s" ${COPYRIGHT_HOLDERS_SUBSTITUTION} COPYRIGHT_HOLDERS_FINAL ${COPYRIGHT_HOLDERS})
 
 # Add path for custom modules

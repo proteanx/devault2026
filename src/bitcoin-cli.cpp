@@ -161,14 +161,14 @@ static int AppInitRPC(int argc, char *argv[]) {
             PACKAGE_NAME " RPC client version " + FormatFullVersion() + "\n";
         if (!gArgs.IsArgSet("-version")) {
             strUsage += "\n"
-                        "Usage:  bitcoin-cli [options] <command> [params]  "
+                        "Usage:  devault-cli [options] <command> [params]  "
                         "Send command to " PACKAGE_NAME "\n"
-                        "or:     bitcoin-cli [options] -named <command> "
+                        "or:     devault-cli [options] -named <command> "
                         "[name=value]...  Send command to " PACKAGE_NAME
                         " (with named arguments)\n"
-                        "or:     bitcoin-cli [options] help                "
+                        "or:     devault-cli [options] help                "
                         "List commands\n"
-                        "or:     bitcoin-cli [options] help <command>      Get "
+                        "or:     devault-cli [options] help <command>      Get "
                         "help for a command\n";
 
             strUsage += "\n" + gArgs.GetHelpMessage();
@@ -562,7 +562,7 @@ static int CommandLineRPC(int argc, char *argv[]) {
                             errCode.get_int() == RPC_WALLET_NOT_SPECIFIED) {
                             strPrint += "\nTry adding "
                                         "\"-rpcwallet=<filename>\" option to "
-                                        "bitcoin-cli command line.";
+                                        "devault-cli command line.";
                         }
                     }
                 } else {

@@ -280,6 +280,8 @@ endif()
 
 # The executable
 add_executable(bitcoin-qt WIN32 main.cpp)
+# DeVault rebrand: emit the GUI binary as `devault-qt` (target name unchanged).
+set_target_properties(bitcoin-qt PROPERTIES OUTPUT_NAME devault-qt)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 	target_sources(bitcoin-qt PRIVATE res/bitcoin-qt-res.rc)
 endif()
