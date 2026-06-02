@@ -20,7 +20,10 @@
 #include <noui.h>
 #include <qt/bitcoingui.h>
 #include <qt/dvtui.h>
+#include <qt/startoptionsmain.h>
 #include <qt/clientmodel.h>
+
+#include <univalue.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
 #include <qt/intro.h>
@@ -402,6 +405,48 @@ void BitcoinApplication::initializeResult(bool success) {
     }
     Q_EMIT splashFinished(window);
     Q_EMIT windowShown(window);
+
+#ifdef ENABLE_WALLET
+    // DeVault: first-run BIP39 wallet wizard (ported from legacy qt/startoptions). Offers to create a
+    // new seeded wallet (show + confirm the BIP39 phrase) or restore from an existing phrase. On
+    // completion we create a "devault" wallet and derive its HD keys from the seed via the verified
+    // importmnemonic RPC (BIP44 m/44'/339'/...). Shown once (QSettings-gated). The legacy single-wallet
+    // "collect seed before init" model does not map to V2's post-init WalletController, so the wizard
+    // runs here, after the node is up, and drives the same RPCs the CLI uses.
+    {
+        QSettings dvtSettings;
+        if (!dvtSettings.value("fDeVaultWalletWizardDone", false).toBool()) {
+            StartOptionsMain wizard(window);
+            wizard.exec();
+            std::string phrase;
+            for (const std::string &w : wizard.getWords()) {
+                phrase += (phrase.empty() ? "" : " ") + w;
+            }
+            dvtSettings.setValue("fDeVaultWalletWizardDone", true);
+            if (!phrase.empty()) {
+                Config &cfg = GetMutableConfig();
+                try {
+                    UniValue cwParams, imParams;
+                    cwParams.read("[\"devault\"]");
+                    m_node.executeRpc(cfg, "createwallet", cwParams, "");
+                    imParams.read("[\"" + phrase + "\", 0, 100, true, true]");
+                    m_node.executeRpc(cfg, "importmnemonic", imParams, "/wallet/devault");
+                } catch (const UniValue &) {
+                    // RPC error object (createwallet/importmnemonic). Detail is logged to debug.log.
+                    QMessageBox::warning(window, tr("DeVault"),
+                                         tr("Could not create the wallet from the seed."));
+                } catch (const std::exception &e) {
+                    QMessageBox::warning(window, tr("DeVault"),
+                                         tr("Could not create the wallet from the seed: %1")
+                                             .arg(QString::fromStdString(e.what())));
+                } catch (...) {
+                    QMessageBox::warning(window, tr("DeVault"),
+                                         tr("Could not create the wallet from the seed."));
+                }
+            }
+        }
+    }
+#endif
 
 #ifdef ENABLE_WALLET
     // Now that initialization/startup is done, process any command-line

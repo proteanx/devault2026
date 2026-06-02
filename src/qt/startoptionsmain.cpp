@@ -197,7 +197,7 @@ void StartOptionsMain::on_Next_clicked() {
                 dlg.exec();
             } else {
                 wordsDone = words;
-                QApplication::quit();
+                accept();
             }
             break;
         }
@@ -215,7 +215,7 @@ void StartOptionsMain::on_Next_clicked() {
             // reverses the lists order
             if (mnemonic::isValidSeedPhrase(seedphrase)) {
                 wordsDone = word_str;
-                QApplication::quit();
+                accept();
             } else {
                 QString error =
                     "Unfortunately, your words seem to be invalid. This is "
