@@ -19,6 +19,7 @@
 #include <interfaces/node.h>
 #include <noui.h>
 #include <qt/bitcoingui.h>
+#include <qt/dvtui.h>
 #include <qt/clientmodel.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
@@ -44,6 +45,7 @@
 #endif
 
 #include <QApplication>
+#include <QPalette>
 #include <QDebug>
 #include <QLibraryInfo>
 #include <QLocale>
@@ -535,6 +537,19 @@ int GuiMain(int argc, char *argv[]) {
 #ifdef Q_OS_MAC
     QApplication::setAttribute(Qt::AA_DontShowIconsInMenus);
 #endif
+
+    // DeVault: apply the custom dark theme (ported from legacy DeVault qt/dvtui). The legacy GUI
+    // applied DVTUI::styleSheetString per top-level window; we apply it once on the QApplication so
+    // it covers the main window AND every dialog (incl. the wallet-creation wizard) uniformly. Gated
+    // by the same "theme" QSettings switch (on by default; user can select the OS theme in Options).
+    if (DVTUI::customThemeIsSet()) {
+        QApplication::setStyle("fusion");
+        QPalette newPal(qApp->palette());
+        newPal.setColor(QPalette::Link, QColor(41, 128, 185));
+        newPal.setColor(QPalette::LinkVisited, QColor(41, 99, 185));
+        qApp->setPalette(newPal);
+        qApp->setStyleSheet(DVTUI::styleSheetString);
+    }
 
     // Register meta types used for QMetaObject::invokeMethod
     qRegisterMetaType<bool *>();

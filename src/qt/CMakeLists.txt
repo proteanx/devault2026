@@ -88,6 +88,7 @@ add_library(bitcoin-qt-base
 	bitcoinunits.cpp
 	clientmodel.cpp
 	csvmodelwriter.cpp
+	dvtui.cpp
 	guiutil.cpp
 	intro.cpp
 	modaloverlay.cpp

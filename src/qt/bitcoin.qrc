@@ -56,6 +56,21 @@
         <file alias="hd_disabled">res/icons/hd_disabled.png</file>
         <file alias="network_disabled">res/icons/network_disabled.png</file>
         <file alias="proxy">res/icons/proxy.png</file>
+        <!-- DeVault theme (dvtui) custom indicators referenced by DVTUI::styleSheetString -->
+        <file alias="checkbox_empty">res/icons/checkbox_empty.png</file>
+        <file alias="checkbox_empty_hover">res/icons/checkbox_empty_hover.png</file>
+        <file alias="checkbox_filled">res/icons/checkbox_filled.png</file>
+        <file alias="checkbox_filled_hover">res/icons/checkbox_filled_hover.png</file>
+        <file alias="radio_empty">res/icons/radio_empty.png</file>
+        <file alias="radio_empty_hover">res/icons/radio_empty_hover.png</file>
+        <file alias="radio_filled">res/icons/radio_filled.png</file>
+        <file alias="radio_filled_hover">res/icons/radio_filled_hover.png</file>
+        <file alias="up_arrow">res/icons/up_arrow.png</file>
+        <file alias="up_arrow_off">res/icons/up_arrow_off.png</file>
+        <file alias="down_arrow">res/icons/down_arrow.png</file>
+        <file alias="down_arrow_off">res/icons/down_arrow_off.png</file>
+        <file alias="left_arrow">res/icons/left_arrow.png</file>
+        <file alias="right_arrow">res/icons/right_arrow.png</file>
     </qresource>
     <qresource prefix="/movies">
         <file alias="spinner-000">res/movies/spinner-000.png</file>
