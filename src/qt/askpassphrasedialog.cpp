@@ -128,7 +128,7 @@ void AskPassphraseDialog::accept() {
                             "<qt>" +
                                 tr("Your wallet is now encrypted. "
                                    "Remember that encrypting your wallet "
-                                   "cannot fully protect your bitcoins from "
+                                   "cannot fully protect your coins from "
                                    "being stolen by malware infecting your "
                                    "computer.") +
                                 "<br><br><b>" +

@@ -44,9 +44,9 @@ SendCoinsEntry::SendCoinsEntry(const PlatformStyle *_platformStyle,
     ui->addAsLabel->setPlaceholderText(
         tr("Enter a label for this address to add it to your address book"));
 
-    // normal Bitcoin Cash address field
+    // normal DeVault address field
     GUIUtil::setupAddressWidget(ui->payTo, this);
-    // just a label for displaying Bitcoin Cash address(es)
+    // just a label for displaying DeVault address(es)
     ui->payTo_is->setFont(GUIUtil::fixedPitchFont());
 
     // Connect signals
@@ -103,7 +103,7 @@ void SendCoinsEntry::setModel(WalletModel *_model) {
         ui->messageTextLabel->setToolTip(
             tr("A message that was attached to the %1 URI which will be stored "
                "with the transaction for your reference. Note: This message "
-               "will not be sent over the Bitcoin network.")
+               "will not be sent over the DeVault network.")
                 .arg(QString::fromStdString(
                     _model->getChainParams().CashAddrPrefix())));
     }

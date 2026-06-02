@@ -121,7 +121,7 @@ Intro::Intro(QWidget *parent, uint64_t blockchain_size,
                                      .arg(PACKAGE_NAME)
                                      .arg(m_blockchain_size)
                                      .arg(2009)
-                                     .arg(tr("Bitcoin")));
+                                     .arg(tr("DeVault")));
     ui->lblExplanation2->setText(
         ui->lblExplanation2->text().arg(PACKAGE_NAME));
 
@@ -143,7 +143,7 @@ Intro::Intro(QWidget *parent, uint64_t blockchain_size,
     }
     requiredSpace += m_chain_state_size;
     ui->sizeWarningLabel->setText(
-        tr("%1 will download and store a copy of the Bitcoin block chain.")
+        tr("%1 will download and store a copy of the DeVault block chain.")
             .arg(PACKAGE_NAME) +
         " " + storageRequiresMsg.arg(requiredSpace) + " " +
         tr("The wallet will also be stored in this directory."));

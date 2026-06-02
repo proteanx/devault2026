@@ -252,7 +252,7 @@ void BitcoinGUI::createActions() {
 
     sendCoinsAction = new QAction(
         platformStyle->SingleColorIcon(":/icons/send"), tr("&Send"), this);
-    sendCoinsAction->setStatusTip(tr("Send coins to a Bitcoin Cash address"));
+    sendCoinsAction->setStatusTip(tr("Send coins to a DeVault address"));
     sendCoinsAction->setToolTip(sendCoinsAction->statusTip());
     sendCoinsAction->setCheckable(true);
     sendCoinsAction->setShortcut(QKeySequence(Qt::ALT + static_cast<int>(Qt::Key_2)));
@@ -367,12 +367,12 @@ void BitcoinGUI::createActions() {
         new QAction(platformStyle->TextColorIcon(":/icons/edit"),
                     tr("Sign &Message..."), this);
     signMessageAction->setStatusTip(
-        tr("Sign messages with your Bitcoin Cash addresses to prove you own them"));
+        tr("Sign messages with your DeVault addresses to prove you own them"));
     verifyMessageAction =
         new QAction(platformStyle->TextColorIcon(":/icons/verify"),
                     tr("&Verify Message..."), this);
     verifyMessageAction->setStatusTip(
-        tr("Verify messages to ensure they were signed with specified Bitcoin Cash addresses"));
+        tr("Verify messages to ensure they were signed with specified DeVault addresses"));
 
     openRPCConsoleAction =
         new QAction(platformStyle->TextColorIcon(":/icons/debugwindow"),
@@ -948,7 +948,7 @@ void BitcoinGUI::updateNetworkState() {
     QString tooltip;
 
     if (m_node.getNetworkActive()) {
-        tooltip = tr("%n active connection(s) to Bitcoin network", "", count) +
+        tooltip = tr("%n active connection(s) to DeVault network", "", count) +
                   QString(".<br>") + tr("Click to disable network activity.");
     } else {
         tooltip = tr("Network activity disabled.") + QString("<br>") +
@@ -1110,7 +1110,7 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime &blockDate, const QStri
 void BitcoinGUI::message(const QString &title, const QString &message,
                          unsigned int style, bool *ret) {
     // default title
-    QString strTitle = tr("Bitcoin");
+    QString strTitle = tr("DeVault");
     // Default to information icon
     int nMBoxIcon = QMessageBox::Information;
     int nNotifyIcon = Notificator::Information;

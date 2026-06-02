@@ -151,7 +151,7 @@ void setupAddressWidget(QValidatedLineEdit *widget, QWidget *parent) {
     // We don't want translators to use own addresses in translations
     // and this is the only place, where this address is supplied.
     widget->setPlaceholderText(
-        QObject::tr("Enter a Bitcoin Cash address (e.g. %1)").arg(QString::fromStdString(DummyAddress(Params()))));
+        QObject::tr("Enter a DeVault address (e.g. %1)").arg(QString::fromStdString(DummyAddress(Params()))));
     widget->setValidator(new BitcoinAddressEntryValidator(parent));
     widget->setCheckValidator(new BitcoinAddressCheckValidator(parent));
 }
@@ -581,22 +581,22 @@ static fs::path StartupShortcutPath() {
        in the uninstaller NSIS script (see: cmake/modules/NSIS.template.in) */
     std::string chain = gArgs.GetChainName();
     if (chain == CBaseChainParams::MAIN) {
-        return GetSpecialFolderPath(CSIDL_STARTUP) / "Bitcoin Cash Node.lnk";
+        return GetSpecialFolderPath(CSIDL_STARTUP) / "DeVault Core.lnk";
     }
     if (chain == CBaseChainParams::TESTNET) {
-        return GetSpecialFolderPath(CSIDL_STARTUP) / "Bitcoin Cash Node (testnet).lnk";
+        return GetSpecialFolderPath(CSIDL_STARTUP) / "DeVault Core (testnet).lnk";
     }
     if (chain == CBaseChainParams::TESTNET4) {
-        return GetSpecialFolderPath(CSIDL_STARTUP) / "Bitcoin Cash Node (testnet4).lnk";
+        return GetSpecialFolderPath(CSIDL_STARTUP) / "DeVault Core (testnet4).lnk";
     }
     if (chain == CBaseChainParams::SCALENET) {
-        return GetSpecialFolderPath(CSIDL_STARTUP) / "Bitcoin Cash Node (scalenet).lnk";
+        return GetSpecialFolderPath(CSIDL_STARTUP) / "DeVault Core (scalenet).lnk";
     }
     if (chain == CBaseChainParams::CHIPNET) {
-        return GetSpecialFolderPath(CSIDL_STARTUP) / "Bitcoin Cash Node (chipnet).lnk";
+        return GetSpecialFolderPath(CSIDL_STARTUP) / "DeVault Core (chipnet).lnk";
     }
     return GetSpecialFolderPath(CSIDL_STARTUP) /
-           strprintf("Bitcoin Cash Node (%s).lnk", chain); // If we get here: "regtest"
+           strprintf("DeVault Core (%s).lnk", chain); // If we get here: "regtest"
 }
 
 bool GetStartOnSystemStartup() {
@@ -676,9 +676,9 @@ static fs::path GetAutostartDir() {
 static fs::path GetAutostartFilePath() {
     std::string chain = gArgs.GetChainName();
     if (chain == CBaseChainParams::MAIN) {
-        return GetAutostartDir() / "bitcoin.desktop";
+        return GetAutostartDir() / "devault.desktop";
     }
-    return GetAutostartDir() / strprintf("bitcoin-%s.lnk", chain);
+    return GetAutostartDir() / strprintf("devault-%s.lnk", chain);
 }
 
 bool GetStartOnSystemStartup() {
@@ -724,9 +724,9 @@ bool SetStartOnSystemStartup(bool fAutoStart) {
         optionFile << "[Desktop Entry]\n";
         optionFile << "Type=Application\n";
         if (chain == CBaseChainParams::MAIN) {
-            optionFile << "Name=Bitcoin\n";
+            optionFile << "Name=DeVault Core\n";
         } else {
-            optionFile << strprintf("Name=Bitcoin (%s)\n", chain);
+            optionFile << strprintf("Name=DeVault Core (%s)\n", chain);
         }
         optionFile << "Exec=" << pszExePath
                    << strprintf(" -min -testnet=%d -regtest=%d\n",
