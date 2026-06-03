@@ -35,6 +35,7 @@
 #include <util/system.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
+#include <wallet/mnemonic.h>
 #include <wallet/coinselection.h>
 #include <wallet/fees.h>
 
@@ -246,6 +247,57 @@ CPubKey CWallet::GenerateNewKey(WalletBatch &batch, bool internal) {
 
 void CWallet::DeriveNewChildKey(WalletBatch &batch, CKeyMetadata &metadata,
                                 CKey &secret, bool internal) {
+    // DeVault [2H]: native BIP39 HD wallets derive along the DeVault BIP44 path
+    // m/44'/<ExtCoinType>'/0'/{0,1}/index from the stored mnemonic. This is bit-for-bit the same
+    // computation as the 2C importmnemonic RPC (CExtKey::SetSeed + Derive), which is verified to
+    // reproduce the gold address (fee x12 -> devault:qpp5gk78...). Empty mnemonic => legacy path.
+    if (hdChain.HasMnemonic()) {
+        // Retrieve the phrase (decrypting it if the wallet is encrypted — which requires the wallet
+        // to be unlocked). TopUpKeyPool already refuses to run while locked, so reaching here locked
+        // would be a programming error; throw rather than silently fall through to the legacy path.
+        std::string phrase;
+        if (!GetMnemonic(phrase)) {
+            throw std::runtime_error(
+                std::string(__func__) +
+                ": wallet is locked — unlock to derive a new BIP39 address");
+        }
+        const auto [ok, words, seed] = mnemonic::CheckSeedPhrase(phrase);
+        if (!ok) {
+            throw std::runtime_error(std::string(__func__) +
+                                     ": stored BIP39 mnemonic is invalid");
+        }
+        const uint32_t HARD = BIP32_HARDENED_KEY_LIMIT;
+        const uint32_t coinType = uint32_t(Params().ExtCoinType());
+        const uint32_t chain = internal ? 1 : 0;
+        CExtKey masterKey, purposeKey, coinKey, acctKey, chainKey, childKey;
+        masterKey.SetSeed(seed.data(), seed.size());
+        if (!masterKey.Derive(purposeKey, 44 | HARD) ||
+            !purposeKey.Derive(coinKey, coinType | HARD) ||
+            !coinKey.Derive(acctKey, 0 | HARD) ||   // account 0', hardened
+            !acctKey.Derive(chainKey, chain)) {     // external(0)/internal(1), NON-hardened
+            throw std::runtime_error(std::string(__func__) +
+                                     ": BIP44 account/chain derivation failed");
+        }
+        uint32_t &counter =
+            internal ? hdChain.nInternalChainCounter : hdChain.nExternalChainCounter;
+        do {
+            if (!chainKey.Derive(childKey, counter)) {   // index, NON-hardened
+                throw std::runtime_error(std::string(__func__) +
+                                         ": BIP44 child derivation failed");
+            }
+            metadata.hdKeypath = "m/44'/" + std::to_string(coinType) + "'/0'/" +
+                                 std::to_string(chain) + "/" + std::to_string(counter);
+            counter++;
+        } while (HaveKey(childKey.key.GetPubKey().GetID()));
+        secret = childKey.key;
+        metadata.hd_seed_id = hdChain.seed_id;
+        if (!batch.WriteHDChain(hdChain)) {
+            throw std::runtime_error(std::string(__func__) +
+                                     ": Writing HD chain model failed");
+        }
+        return;
+    }
+
     // for now we use a fixed keypath scheme of m/0'/0'/k
     // seed (256bit)
     CKey seed;
@@ -858,9 +910,21 @@ bool CWallet::EncryptWallet(const SecureString &strWalletPassphrase) {
         Lock();
         Unlock(strWalletPassphrase);
 
-        // If we are using HD, replace the HD seed with a new one
+        // If we are using HD, protect the seed material.
+        // DeVault [2H]: a native BIP39 HD wallet must KEEP its mnemonic — the user has backed it up
+        // (or will restore from it), and every address derives from it. So we encrypt the existing
+        // mnemonic in place rather than throwing it away. A legacy BCHN HD wallet has no recoverable
+        // backup phrase, so (as upstream) we replace its seed with a fresh one for forward secrecy.
         if (IsHDEnabled()) {
-            SetHDSeed(GenerateNewSeed());
+            if (hdChain.HasMnemonic()) {
+                if (!EncryptHDMnemonic()) {
+                    // We are unlocked with a plaintext mnemonic present, so this must not fail;
+                    // matching the surrounding policy, die rather than leave a half-encrypted wallet.
+                    assert(false);
+                }
+            } else {
+                SetHDSeed(GenerateNewSeed());
+            }
         }
 
         NewKeyPool();
@@ -1546,6 +1610,94 @@ CPubKey CWallet::GenerateNewSeed() {
     CKey key;
     key.MakeNewKey(true);
     return DeriveNewSeed(key);
+}
+
+// DeVault [2H]: deterministic per-wallet IV for mnemonic encryption, derived from the (public,
+// persisted) seed id. This mirrors the key store's own convention of using a public value as the
+// AES-CBC IV — the IV is not secret, only unique per secret. seed_id (a hash160 of the master
+// pubkey) is unique per wallet, and exactly one secret (the mnemonic) is encrypted per wallet, so
+// using its bytes directly as the IV is safe. AES-CBC uses only the first WALLET_CRYPTO_IV_SIZE
+// (16) bytes; the remaining bytes of the 32-byte buffer stay zero.
+static uint256 MnemonicEncryptionIV(const CKeyID &seed_id) {
+    uint256 iv;
+    for (size_t i = 0; i < seed_id.size(); ++i) {
+        iv.begin()[i] = seed_id.begin()[i];
+    }
+    return iv;
+}
+
+bool CWallet::SetHDSeedFromMnemonic(const std::string &phrase) {
+    // DeVault [2H]: set this wallet up as a NATIVE BIP39 HD wallet. Keys derive along the DeVault
+    // BIP44 path m/44'/<ExtCoinType>'/0'/{0,1}/index from this seed (see DeriveNewChildKey), so
+    // every address — including future getnewaddress — comes from the seed and a restore re-derives.
+    // Returns false if the phrase is not a valid DeVault seed phrase (or the wallet is encrypted but
+    // locked, in which case the mnemonic cannot be stored encrypted).
+    LOCK(cs_wallet);
+    const auto [ok, words, seed] = mnemonic::CheckSeedPhrase(phrase);
+    if (!ok) {
+        return false;
+    }
+    // Use the BIP32 master key's id as a stable seed identifier for key metadata (hd_seed_id).
+    CExtKey masterKey;
+    masterKey.SetSeed(seed.data(), seed.size());
+    CHDChain newHdChain;
+    newHdChain.nVersion = CHDChain::VERSION_HD_MNEMONIC;
+    newHdChain.seed_id = masterKey.key.GetPubKey().GetID();
+    if (IsCrypted()) {
+        // Encrypted wallet: store the phrase encrypted under the master key (requires unlock).
+        // The plaintext mnemonic is never written to disk.
+        CKeyingMaterial plaintext(phrase.begin(), phrase.end());
+        std::vector<uint8_t> ciphertext;
+        if (!EncryptWithMasterKey(plaintext, MnemonicEncryptionIV(newHdChain.seed_id),
+                                  ciphertext)) {
+            return false;
+        }
+        newHdChain.vchCryptedMnemonic = std::move(ciphertext);
+    } else {
+        // Passwordless wallet (user's choice): the phrase is stored in plaintext.
+        newHdChain.mnemonic = phrase;
+    }
+    SetHDChain(newHdChain, false);
+    NotifyCanGetAddressesChanged();
+    UnsetWalletFlag(WALLET_FLAG_BLANK_WALLET);
+    return true;
+}
+
+bool CWallet::GetMnemonic(std::string &mnemonicOut) const {
+    LOCK(cs_wallet);
+    if (!hdChain.HasMnemonic()) {
+        return false;
+    }
+    if (!hdChain.mnemonic.empty()) {
+        mnemonicOut = hdChain.mnemonic;
+        return true;
+    }
+    // Encrypted mnemonic: decrypt with the master key (requires the wallet to be unlocked).
+    CKeyingMaterial plaintext;
+    if (!DecryptWithMasterKey(hdChain.vchCryptedMnemonic,
+                              MnemonicEncryptionIV(hdChain.seed_id), plaintext)) {
+        return false;
+    }
+    mnemonicOut.assign(plaintext.begin(), plaintext.end());
+    return true;
+}
+
+bool CWallet::EncryptHDMnemonic() {
+    LOCK(cs_wallet);
+    if (hdChain.mnemonic.empty()) {
+        // Nothing to encrypt: either already encrypted (ok) or not a native BIP39 HD wallet.
+        return !hdChain.vchCryptedMnemonic.empty();
+    }
+    CKeyingMaterial plaintext(hdChain.mnemonic.begin(), hdChain.mnemonic.end());
+    std::vector<uint8_t> ciphertext;
+    if (!EncryptWithMasterKey(plaintext, MnemonicEncryptionIV(hdChain.seed_id), ciphertext)) {
+        return false;
+    }
+    CHDChain chain = hdChain;
+    chain.vchCryptedMnemonic = std::move(ciphertext);
+    chain.mnemonic.clear();
+    SetHDChain(chain, false);
+    return true;
 }
 
 CPubKey CWallet::DeriveNewSeed(const CKey &key) {

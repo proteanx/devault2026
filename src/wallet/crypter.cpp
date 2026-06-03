@@ -149,6 +149,26 @@ static bool DecryptSecret(const CKeyingMaterial &vMasterKey,
                                *((CKeyingMaterial *)&vchPlaintext));
 }
 
+bool CCryptoKeyStore::EncryptWithMasterKey(const CKeyingMaterial &plaintext,
+                                           const uint256 &iv,
+                                           std::vector<uint8_t> &ciphertext) const {
+    LOCK(cs_KeyStore);
+    if (!fUseCrypto || vMasterKey.empty()) {
+        return false;
+    }
+    return EncryptSecret(vMasterKey, plaintext, iv, ciphertext);
+}
+
+bool CCryptoKeyStore::DecryptWithMasterKey(const std::vector<uint8_t> &ciphertext,
+                                           const uint256 &iv,
+                                           CKeyingMaterial &plaintext) const {
+    LOCK(cs_KeyStore);
+    if (!fUseCrypto || vMasterKey.empty()) {
+        return false;
+    }
+    return DecryptSecret(vMasterKey, ciphertext, iv, plaintext);
+}
+
 static bool DecryptKey(const CKeyingMaterial &vMasterKey,
                        const std::vector<uint8_t> &vchCryptedSecret,
                        const CPubKey &vchPubKey, CKey &key) {

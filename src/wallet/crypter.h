@@ -8,6 +8,7 @@
 #include <keystore.h>
 #include <serialize.h>
 #include <support/allocators/secure.h>
+#include <uint256.h>
 
 #include <atomic>
 
@@ -130,6 +131,15 @@ protected:
     bool Unlock(const CKeyingMaterial &vMasterKeyIn,
                 bool accept_no_keys = false);
     CryptedKeyMap mapCryptedKeys GUARDED_BY(cs_KeyStore);
+
+    //! DeVault [2H]: encrypt/decrypt an arbitrary secret (e.g. the BIP39 mnemonic) with the
+    //! in-memory wallet master key, using the same AES-256-CBC primitive as the key store. The
+    //! caller supplies a deterministic IV (derived from public, persisted data). Both return false
+    //! if the key store is not encrypted or is currently locked (vMasterKey unavailable).
+    bool EncryptWithMasterKey(const CKeyingMaterial &plaintext, const uint256 &iv,
+                              std::vector<uint8_t> &ciphertext) const;
+    bool DecryptWithMasterKey(const std::vector<uint8_t> &ciphertext, const uint256 &iv,
+                              CKeyingMaterial &plaintext) const;
 
 public:
     CCryptoKeyStore()

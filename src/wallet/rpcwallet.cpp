@@ -29,6 +29,7 @@
 #include <wallet/coincontrol.h>
 #include <wallet/psbtwallet.h>
 #include <wallet/rpcwallet.h>
+#include <wallet/mnemonic.h>
 #include <wallet/wallet.h>
 #include <wallet/walletdb.h>
 #include <wallet/walletutil.h>
@@ -2496,9 +2497,9 @@ static UniValue encryptwallet(const Config &config,
                            "Error: Failed to encrypt the wallet.");
     }
 
-    return "wallet encrypted; The keypool has been flushed and a new HD seed "
-           "was generated (if you are using HD). You need to make a new "
-           "backup.";
+    return "wallet encrypted; the keypool has been flushed. Your BIP39 recovery "
+           "phrase is now stored encrypted and remains valid — keep your backup "
+           "of it (and of the wallet file) safe.";
 }
 
 static UniValue lockunspent(const Config &config,
@@ -2996,26 +2997,39 @@ static UniValue loadwallet(const Config &config,
 static UniValue createwallet(const Config &config,
                              const JSONRPCRequest &request) {
     if (request.fHelp || request.params.size() < 1 ||
-        request.params.size() > 3) {
+        request.params.size() > 5) {
         throw std::runtime_error(
             RPCHelpMan{"createwallet",
-                "\nCreates and loads a new wallet.\n",
+                "\nCreates and loads a new wallet.\n"
+                "\nBy default this creates a native DeVault BIP39 HD wallet: a fresh 12-word "
+                "recovery phrase (mnemonic) is generated and returned ONCE in the result. Every "
+                "address derives from this phrase, so the phrase alone can restore the whole wallet "
+                "— write it down and keep it safe. Pass \"mnemonic\" to restore an existing wallet "
+                "instead, and \"passphrase\" to encrypt the wallet (and its recovery phrase) at "
+                "creation.\n",
                 {
                     {"wallet_name", RPCArg::Type::STR, /* opt */ false, /* default_val */ "", "The name for the new wallet. If this is a path, the wallet will be created at the path location."},
-                    {"disable_private_keys", RPCArg::Type::BOOL, /* opt */ true, /* default_val */ "false", "Disable the possibility of private keys (only watchonlys are possible in this mode)."},
-                    {"blank", RPCArg::Type::BOOL, /* opt */ true, /* default_val */ "false", "Create a blank wallet. A blank wallet has no keys or HD seed. One can be set using sethdseed."},
+                    {"disable_private_keys", RPCArg::Type::BOOL, /* opt */ true, /* default_val */ "false", "Disable the possibility of private keys (only watchonlys are possible in this mode). No BIP39 seed is created."},
+                    {"blank", RPCArg::Type::BOOL, /* opt */ true, /* default_val */ "false", "Create a blank wallet. A blank wallet has no keys or HD seed and no BIP39 phrase is generated. One can be set later."},
+                    {"passphrase", RPCArg::Type::STR, /* opt */ true, /* default_val */ "", "Encrypt the wallet with this passphrase. The wallet and its BIP39 recovery phrase are stored encrypted; the passphrase is then required to unlock the wallet and to generate new addresses."},
+                    {"mnemonic", RPCArg::Type::STR, /* opt */ true, /* default_val */ "", "Restore an existing wallet from this BIP39 recovery phrase (12 or 24 words) instead of generating a new one."},
                 }}
                 .ToString() +
             "\nResult:\n"
             "{\n"
-            "  \"name\" :    <wallet_name>,        (string) The wallet name if "
+            "  \"name\" :     <wallet_name>,        (string) The wallet name if "
             "created successfully. If the wallet was created using a full "
             "path, the wallet_name will be the full path.\n"
-            "  \"warning\" : <warning>,            (string) Warning message if "
+            "  \"warning\" :  <warning>,            (string) Warning message if "
             "wallet was not loaded cleanly.\n"
+            "  \"mnemonic\" : <phrase>,             (string) The BIP39 recovery "
+            "phrase for this wallet. WRITE IT DOWN AND KEEP IT SAFE — it is "
+            "shown only once and is the only way to recover the wallet. Omitted "
+            "for watch-only (disable_private_keys) and blank wallets.\n"
             "}\n"
             "\nExamples:\n" +
             HelpExampleCli("createwallet", "\"testwallet\"") +
+            HelpExampleCli("createwallet", "\"testwallet\" false false \"my passphrase\"") +
             HelpExampleRpc("createwallet", "\"testwallet\""));
     }
 
@@ -3024,12 +3038,64 @@ static UniValue createwallet(const Config &config,
     std::string error;
     std::string warning;
 
-    uint64_t flags = 0;
-    if (!request.params[1].isNull() && request.params[1].get_bool()) {
-        flags |= WALLET_FLAG_DISABLE_PRIVATE_KEYS;
+    const bool disablePrivKeys =
+        !request.params[1].isNull() && request.params[1].get_bool();
+    const bool blank =
+        !request.params[2].isNull() && request.params[2].get_bool();
+
+    SecureString passphrase;
+    passphrase.reserve(100);
+    if (!request.params[3].isNull()) {
+        passphrase = request.params[3].get_str().c_str();
     }
 
-    if (!request.params[2].isNull() && request.params[2].get_bool()) {
+    const std::string mnemonicArg =
+        request.params[4].isNull() ? std::string() : request.params[4].get_str();
+
+    // A native DeVault BIP39 HD wallet is the default. It is suppressed only for watch-only
+    // (disable_private_keys) and explicitly-blank wallets.
+    const bool nativeHD = !disablePrivKeys && !blank;
+
+    if (!mnemonicArg.empty() && !nativeHD) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER,
+                           "A mnemonic can only be supplied for a normal wallet "
+                           "(not blank and with private keys enabled).");
+    }
+
+    // Decide the recovery phrase up front — generate a fresh one or validate the restore phrase —
+    // BEFORE any wallet file is created, so a bad phrase fails cleanly with nothing left on disk.
+    std::string phrase;
+    if (nativeHD) {
+        if (mnemonicArg.empty()) {
+            auto [words, seed] = mnemonic::GenerateSeedPhrase(12);
+            for (size_t i = 0; i < words.size(); ++i) {
+                if (i != 0) {
+                    phrase += ' ';
+                }
+                phrase += words[i];
+            }
+        } else {
+            auto [ok, words, seed] = mnemonic::CheckSeedPhrase(mnemonicArg);
+            if (!ok) {
+                throw JSONRPCError(
+                    RPC_INVALID_ADDRESS_OR_KEY,
+                    "Invalid mnemonic: expected 12 or 24 valid recovery-phrase words.");
+            }
+            phrase = mnemonicArg;
+        }
+    }
+
+    uint64_t flags = 0;
+    if (disablePrivKeys) {
+        flags |= WALLET_FLAG_DISABLE_PRIVATE_KEYS;
+    }
+    if (blank) {
+        flags |= WALLET_FLAG_BLANK_WALLET;
+    }
+    // For the native HD path we create the wallet BLANK so CreateWalletFromFile does NOT generate a
+    // legacy (non-mnemonic) BCHN seed; we install the BIP39 seed ourselves below. Creating it blank
+    // also lets us encrypt it (while still seedless) before installing the encrypted mnemonic.
+    if (nativeHD) {
         flags |= WALLET_FLAG_BLANK_WALLET;
     }
 
@@ -3054,12 +3120,47 @@ static UniValue createwallet(const Config &config,
     }
     AddWallet(wallet);
 
+    // Encrypt at creation if requested. The wallet is still blank/seedless here, so EncryptWallet
+    // does not regenerate any seed; we then unlock it to install the (encrypted) mnemonic.
+    if (!passphrase.empty()) {
+        if (!wallet->EncryptWallet(passphrase)) {
+            RemoveWallet(wallet);
+            throw JSONRPCError(RPC_WALLET_ENCRYPTION_FAILED,
+                               "Error: Failed to encrypt the wallet.");
+        }
+        if (!wallet->Unlock(passphrase)) {
+            RemoveWallet(wallet);
+            throw JSONRPCError(RPC_WALLET_PASSPHRASE_INCORRECT,
+                               "Error: The wallet was encrypted but could not be unlocked.");
+        }
+    }
+
+    if (nativeHD) {
+        if (!wallet->SetHDSeedFromMnemonic(phrase)) {
+            RemoveWallet(wallet);
+            throw JSONRPCError(RPC_WALLET_ERROR,
+                               "Error: Failed to set up the BIP39 HD seed.");
+        }
+        if (!wallet->TopUpKeyPool()) {
+            RemoveWallet(wallet);
+            throw JSONRPCError(RPC_WALLET_ERROR,
+                               "Error: Unable to generate initial keys.");
+        }
+    }
+
+    if (!passphrase.empty()) {
+        wallet->Lock();
+    }
+
     wallet->postInitProcess();
 
     UniValue::Object obj;
-    obj.reserve(2);
+    obj.reserve(3);
     obj.emplace_back("name", wallet->GetName());
     obj.emplace_back("warning", std::move(warning));
+    if (nativeHD) {
+        obj.emplace_back("mnemonic", phrase);
+    }
     return obj;
 }
 
@@ -4508,7 +4609,7 @@ static const ContextFreeRPCCommand commands[] = {
     { "wallet",             "abandontransaction",           abandontransaction,           {"txid"} },
     { "wallet",             "addmultisigaddress",           addmultisigaddress,           {"nrequired","keys","label"} },
     { "wallet",             "backupwallet",                 backupwallet,                 {"destination"} },
-    { "wallet",             "createwallet",                 createwallet,                 {"wallet_name", "disable_private_keys", "blank"} },
+    { "wallet",             "createwallet",                 createwallet,                 {"wallet_name", "disable_private_keys", "blank", "passphrase", "mnemonic"} },
     { "wallet",             "encryptwallet",                encryptwallet,                {"passphrase"} },
     { "wallet",             "getaddressesbylabel",          getaddressesbylabel,          {"label"} },
     { "wallet",             "getaddressinfo",               getaddressinfo,               {"address"} },

@@ -10,7 +10,9 @@
 #include <consensus/validation.h>
 #include <interfaces/chain.h>
 #include <key.h>
+#include <key.h>
 #include <key_io.h>
+#include <wallet/mnemonic.h>
 #include <keystore.h>
 #include <node/blockstorage.h>
 #include <policy/policy.h>
@@ -573,6 +575,42 @@ BOOST_FIXTURE_TEST_CASE(wallet_disableprivkeys, TestChain100Setup) {
     BOOST_CHECK(!wallet->TopUpKeyPool(1000));
     CPubKey pubkey;
     BOOST_CHECK(!wallet->GetKeyFromPool(pubkey, false));
+}
+
+// DeVault [2H]: a native BIP39 HD wallet (CHDChain mnemonic + DeriveNewChildKey) must derive the
+// SAME keys as the verified 2C importmnemonic path. Compute the expected first external key with the
+// explicit CExtKey sequence (network-agnostic, using this network's ExtCoinType) and assert the
+// wallet's first getnewaddress matches it. On mainnet this index-0 key is the gold vector
+// devault:qpp5gk78lhw8vh8twsp743kxwd5es3un5sklddsgjq (2C / the Delight light wallet).
+BOOST_FIXTURE_TEST_CASE(devault_bip39_hd_native, TestChain100Setup) {
+    const std::string phrase = "fee fee fee fee fee fee fee fee fee fee fee fee";
+
+    // Expected: m/44'/<coin>'/0'/0/0 via the exact 2C derivation.
+    const auto [ok, words, seed] = mnemonic::CheckSeedPhrase(phrase);
+    BOOST_CHECK(ok);
+    const uint32_t HARD = 0x80000000;
+    const uint32_t coinType = uint32_t(Params().ExtCoinType());
+    CExtKey m, purpose, coin, acct, ext, child;
+    m.SetSeed(seed.data(), seed.size());
+    BOOST_CHECK(m.Derive(purpose, 44 | HARD));
+    BOOST_CHECK(purpose.Derive(coin, coinType | HARD));
+    BOOST_CHECK(coin.Derive(acct, 0 | HARD));
+    BOOST_CHECK(acct.Derive(ext, 0));   // external chain, NON-hardened
+    BOOST_CHECK(ext.Derive(child, 0));  // index 0, NON-hardened
+    const CKeyID expected = child.key.GetPubKey().GetID();
+
+    // Actual: the wallet derives natively via DeriveNewChildKey (mnemonic branch).
+    auto chain = interfaces::MakeChain();
+    std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(
+        Params(), *chain, WalletLocation(), WalletDatabase::CreateMock());
+    bool firstRun;
+    wallet->LoadWallet(firstRun);
+    wallet->SetMinVersion(FEATURE_LATEST);
+    BOOST_CHECK(wallet->SetHDSeedFromMnemonic(phrase));
+    BOOST_CHECK(wallet->TopUpKeyPool());
+    CPubKey pubkey;
+    BOOST_CHECK(wallet->GetKeyFromPool(pubkey, false));  // first EXTERNAL key
+    BOOST_CHECK_EQUAL(pubkey.GetID().ToString(), expected.ToString());
 }
 
 // Explicit calculation which is used to test the wallet constant

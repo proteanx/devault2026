@@ -1393,6 +1393,21 @@ public:
      */
     void SetHDSeed(const CPubKey &key);
 
+    //! DeVault [2H]: set up this wallet as a native BIP39 HD wallet from a mnemonic phrase
+    //! (BIP44 m/44'/<ExtCoinType>'/0'/{0,1}/index). Returns false on an invalid seed phrase. If the
+    //! wallet is encrypted, it must be unlocked: the phrase is stored encrypted under the master key.
+    bool SetHDSeedFromMnemonic(const std::string &phrase);
+
+    //! DeVault [2H]: retrieve this wallet's BIP39 recovery phrase in plaintext (e.g. to display it
+    //! for backup, or to derive a new key). For an encrypted wallet the wallet must be unlocked.
+    //! Returns false if this is not a native BIP39 HD wallet, or it is encrypted and locked.
+    bool GetMnemonic(std::string &mnemonicOut) const;
+
+    //! DeVault [2H]: encrypt this wallet's plaintext BIP39 mnemonic in place under the (unlocked)
+    //! master key, clearing the plaintext. Called during wallet encryption; the wallet must be
+    //! unlocked. Returns false on failure (e.g. wallet locked or no plaintext mnemonic present).
+    bool EncryptHDMnemonic();
+
     /**
      * Blocks until the wallet state is up-to-date to /at least/ the current
      * chain at the time this function is entered.

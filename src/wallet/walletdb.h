@@ -62,9 +62,21 @@ public:
     uint32_t nInternalChainCounter;
     //! seed hash160
     CKeyID seed_id;
+    //! DeVault [2H]: BIP39 mnemonic for native HD wallets. When this chain HasMnemonic(), keys
+    //! derive along the DeVault BIP44 path m/44'/<ExtCoinType>'/0'/{0,1}/index from this seed (see
+    //! CWallet::DeriveNewChildKey); otherwise the wallet uses the legacy BCHN m/0'/0'/k' path.
+    //! For a passwordless wallet the plaintext phrase is held here; for an encrypted wallet this is
+    //! empty and the phrase lives (encrypted under the wallet master key) in vchCryptedMnemonic.
+    std::string mnemonic;
+    //! DeVault [2H]: the BIP39 mnemonic encrypted under the wallet master key (AES-256-CBC, IV
+    //! derived from seed_id). Set instead of `mnemonic` once the wallet is encrypted. Exactly one
+    //! of {mnemonic, vchCryptedMnemonic} is non-empty for a native BIP39 HD wallet.
+    std::vector<uint8_t> vchCryptedMnemonic;
 
     static const int VERSION_HD_BASE = 1;
     static const int VERSION_HD_CHAIN_SPLIT = 2;
+    //! DeVault [2H]: adds the BIP39 mnemonic (only written when a mnemonic is set).
+    static const int VERSION_HD_MNEMONIC = 3;
     static const int CURRENT_VERSION = VERSION_HD_CHAIN_SPLIT;
     int nVersion;
 
@@ -75,6 +87,19 @@ public:
         if (obj.nVersion >= VERSION_HD_CHAIN_SPLIT) {
             READWRITE(obj.nInternalChainCounter);
         }
+        // DeVault [2H]: the BIP39 mnemonic is only present (and only written) for native HD wallets.
+        // Both fields are written; for a given wallet exactly one is non-empty (plaintext when
+        // passwordless, encrypted when the wallet is encrypted).
+        if (obj.nVersion >= VERSION_HD_MNEMONIC) {
+            READWRITE(obj.mnemonic);
+            READWRITE(obj.vchCryptedMnemonic);
+        }
+    }
+
+    //! DeVault [2H]: true if this is a native BIP39 HD wallet (a mnemonic, plaintext or encrypted,
+    //! is present). Drives the BIP44 derivation branch in CWallet::DeriveNewChildKey.
+    bool HasMnemonic() const {
+        return !mnemonic.empty() || !vchCryptedMnemonic.empty();
     }
 
     void SetNull() {
@@ -82,6 +107,8 @@ public:
         nExternalChainCounter = 0;
         nInternalChainCounter = 0;
         seed_id.SetNull();
+        mnemonic.clear();
+        vchCryptedMnemonic.clear();
     }
 };
 
