@@ -24,6 +24,7 @@
 #include <qt/clientmodel.h>
 
 #include <univalue.h>
+#include <wallet/walletutil.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
 #include <qt/intro.h>
@@ -407,24 +408,37 @@ void BitcoinApplication::initializeResult(bool success) {
     Q_EMIT windowShown(window);
 
 #ifdef ENABLE_WALLET
-    // DeVault: first-run BIP39 wallet wizard (ported from legacy qt/startoptions). Offers to create a
-    // new seeded wallet (show + confirm the BIP39 phrase) or restore from an existing phrase. On
-    // completion we create a "devault" wallet and derive its HD keys from the seed via the verified
-    // importmnemonic RPC (BIP44 m/44'/339'/...). Shown once (QSettings-gated). The legacy single-wallet
-    // "collect seed before init" model does not map to V2's post-init WalletController, so the wizard
-    // runs here, after the node is up, and drives the same RPCs the CLI uses.
+    // DeVault: BIP39 wallet wizard (ported from legacy qt/startoptions). The legacy single-wallet
+    // "collect the seed before node init" model does not map to V2 (post-init WalletController), so
+    // the wizard runs here, after the node is up, and drives the same createwallet/importmnemonic
+    // RPCs the CLI uses (BIP44 m/44'/339'/...). The gate is the on-disk existence of the "devault"
+    // wallet, which is DATADIR-SCOPED and self-correcting: if it exists we just load it; otherwise
+    // this is a fresh datadir and we show the wizard. (Deliberately NOT a QSettings flag — that lives
+    // outside the datadir, so it persisted across `-datadir` wipes; and it must never be marked done
+    // on an incomplete close, or the wizard would never reappear.)
     {
-        QSettings dvtSettings;
-        if (!dvtSettings.value("fDeVaultWalletWizardDone", false).toBool()) {
+        Config &cfg = GetMutableConfig();
+        const bool devaultWalletExists = fs::exists(GetWalletDir() / "devault");
+        if (devaultWalletExists) {
+            // Existing seeded wallet for this datadir: load it so the GUI shows it (node init only
+            // auto-loads the default wallet, not named ones).
+            try {
+                UniValue p;
+                p.read("[\"devault\"]");
+                m_node.executeRpc(cfg, "loadwallet", p, "");
+            } catch (...) {
+                // already loaded, or a load error already surfaced in the log; ignore here
+            }
+        } else {
             StartOptionsMain wizard(window);
             wizard.exec();
             std::string phrase;
             for (const std::string &w : wizard.getWords()) {
                 phrase += (phrase.empty() ? "" : " ") + w;
             }
-            dvtSettings.setValue("fDeVaultWalletWizardDone", true);
+            // Only act when the user actually completed the wizard (non-empty seed). If they closed
+            // it, nothing is created, so the wizard reappears next launch (no devault wallet yet).
             if (!phrase.empty()) {
-                Config &cfg = GetMutableConfig();
                 try {
                     UniValue cwParams, imParams;
                     cwParams.read("[\"devault\"]");
@@ -432,7 +446,6 @@ void BitcoinApplication::initializeResult(bool success) {
                     imParams.read("[\"" + phrase + "\", 0, 100, true, true]");
                     m_node.executeRpc(cfg, "importmnemonic", imParams, "/wallet/devault");
                 } catch (const UniValue &) {
-                    // RPC error object (createwallet/importmnemonic). Detail is logged to debug.log.
                     QMessageBox::warning(window, tr("DeVault"),
                                          tr("Could not create the wallet from the seed."));
                 } catch (const std::exception &e) {
