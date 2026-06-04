@@ -325,7 +325,14 @@ void WalletInit::Construct(NodeContext &node) const {
         LogPrintf("Wallet disabled!\n");
         return;
     }
-    gArgs.SoftSetArg("-wallet", "");
+    // DeVault [2H item C]: never silently auto-create a default wallet with a randomly generated,
+    // un-backed-up (non-BIP39) seed. If the user did not name a wallet with -wallet, load the
+    // default wallet only when it already exists on disk; otherwise start with NO wallet loaded and
+    // let the user create one via `createwallet` (CLI) or the GUI setup wizard — both of which
+    // produce a native BIP39 HD wallet whose recovery phrase is shown once for backup.
+    if (!gArgs.IsArgSet("-wallet") && fs::exists(GetWalletDir() / "wallet.dat")) {
+        gArgs.SoftSetArg("-wallet", "");
+    }
     node.chain_clients.emplace_back(
         interfaces::MakeWalletClient(*node.chain, gArgs.GetArgs("-wallet")));
 }

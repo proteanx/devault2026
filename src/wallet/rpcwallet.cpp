@@ -3100,7 +3100,15 @@ static UniValue createwallet(const Config &config,
     }
 
     WalletLocation location(request.params[0].get_str());
-    if (location.Exists()) {
+    // DeVault [2H item C]: the default (unnamed) wallet lives at <walletdir>/wallet.dat, but its
+    // WalletLocation path is the wallet directory itself — which always exists — so Exists() can't
+    // detect it. Check the actual wallet file for the default wallet; use the normal path check for
+    // named wallets. This lets the GUI wizard / CLI (re)create the default BIP39 HD wallet.
+    const bool wallet_already_exists =
+        location.GetName().empty()
+            ? fs::exists(GetWalletDir() / "wallet.dat")
+            : location.Exists();
+    if (wallet_already_exists) {
         throw JSONRPCError(RPC_WALLET_ERROR,
                            "Wallet " + location.GetName() + " already exists.");
     }
