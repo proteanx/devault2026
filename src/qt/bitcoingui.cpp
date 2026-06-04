@@ -363,6 +363,11 @@ void BitcoinGUI::createActions() {
                     tr("&Change Passphrase..."), this);
     changePassphraseAction->setStatusTip(
         tr("Change the passphrase used for wallet encryption"));
+    showRecoveryPhraseAction =
+        new QAction(platformStyle->TextColorIcon(":/icons/key"),
+                    tr("Show &Recovery Phrase..."), this);
+    showRecoveryPhraseAction->setStatusTip(
+        tr("Display this wallet's BIP39 recovery phrase for backup"));
     signMessageAction =
         new QAction(platformStyle->TextColorIcon(":/icons/edit"),
                     tr("Sign &Message..."), this);
@@ -432,6 +437,8 @@ void BitcoinGUI::createActions() {
                 &WalletFrame::backupWallet);
         connect(changePassphraseAction, &QAction::triggered, walletFrame,
                 &WalletFrame::changePassphrase);
+        connect(showRecoveryPhraseAction, &QAction::triggered, walletFrame,
+                &WalletFrame::showRecoveryPhrase);
         connect(signMessageAction, &QAction::triggered,
                 [this] { showNormalIfMinimized(); });
         connect(signMessageAction, &QAction::triggered,
@@ -481,6 +488,7 @@ void BitcoinGUI::createMenuBar() {
     if (walletFrame) {
         settings->addAction(encryptWalletAction);
         settings->addAction(changePassphraseAction);
+        settings->addAction(showRecoveryPhraseAction);
         settings->addSeparator();
     }
     settings->addAction(optionsAction);
@@ -763,6 +771,7 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled) {
     encryptWalletAction->setEnabled(enabled);
     backupWalletAction->setEnabled(enabled);
     changePassphraseAction->setEnabled(enabled);
+    showRecoveryPhraseAction->setEnabled(enabled);
     signMessageAction->setEnabled(enabled);
     verifyMessageAction->setEnabled(enabled);
     usedSendingAddressesAction->setEnabled(enabled);

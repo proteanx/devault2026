@@ -18,17 +18,20 @@
 #include <qt/overviewpage.h>
 #include <qt/platformstyle.h>
 #include <qt/receivecoinsdialog.h>
+#include <qt/revealphrase.h>
 #include <qt/sendcoinsdialog.h>
 #include <qt/signverifymessagedialog.h>
 #include <qt/transactiontablemodel.h>
 #include <qt/transactionview.h>
 #include <qt/walletmodel.h>
+#include <support/allocators/secure.h>
 #include <ui_interface.h>
 
 #include <QAction>
 #include <QActionGroup>
 #include <QFileDialog>
 #include <QHBoxLayout>
+#include <QMessageBox>
 #include <QProgressDialog>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -344,6 +347,29 @@ void WalletView::backupWallet() {
 void WalletView::changePassphrase() {
     AskPassphraseDialog dlg(AskPassphraseDialog::ChangePass, this);
     dlg.setModel(walletModel);
+    dlg.exec();
+}
+
+void WalletView::showRecoveryPhrase() {
+    if (!walletModel) {
+        return;
+    }
+    // DeVault [2H item D]: display the wallet's BIP39 recovery phrase for backup. If the wallet is
+    // encrypted, requestUnlock() prompts for the passphrase; the wallet is re-locked when this
+    // context is destroyed at the end of the function.
+    WalletModel::UnlockContext ctx(walletModel->requestUnlock());
+    if (!ctx.isValid()) {
+        return;
+    }
+    std::string phrase;
+    if (!walletModel->wallet().getMnemonic(phrase) || phrase.empty()) {
+        QMessageBox::warning(
+            this, tr("Recovery phrase"),
+            tr("This wallet has no BIP39 recovery phrase, or it could not be retrieved."));
+        return;
+    }
+    SecureVector words(phrase.begin(), phrase.end());
+    RevealPhrase dlg(words, this);
     dlg.exec();
 }
 

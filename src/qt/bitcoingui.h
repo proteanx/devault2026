@@ -143,6 +143,7 @@ private:
     QAction *encryptWalletAction = nullptr;
     QAction *backupWalletAction = nullptr;
     QAction *changePassphraseAction = nullptr;
+    QAction *showRecoveryPhraseAction = nullptr;
     QAction *aboutQtAction = nullptr;
     QAction *openRPCConsoleAction = nullptr;
     QAction *openAction = nullptr;

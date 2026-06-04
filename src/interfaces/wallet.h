@@ -65,6 +65,10 @@ public:
     //! Unlock wallet.
     virtual bool unlock(const SecureString &wallet_passphrase) = 0;
 
+    //! DeVault [2H item D]: get the wallet's BIP39 recovery phrase (plaintext). The wallet must be
+    //! unlocked if encrypted. Returns false if this is not a native BIP39 HD wallet, or it is locked.
+    virtual bool getMnemonic(std::string &mnemonic) = 0;
+
     //! Return whether wallet is locked.
     virtual bool isLocked() = 0;
 

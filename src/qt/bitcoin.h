@@ -12,6 +12,7 @@
 #include <QApplication>
 
 #include <memory>
+#include <string>
 #include <vector>
 
 class BitcoinGUI;
@@ -95,6 +96,19 @@ public:
     /// Setup platform style
     void setupPlatformStyle();
 
+#ifdef ENABLE_WALLET
+    /// DeVault [2H item D]: record the first-run setup wizard's result, collected before the node
+    /// starts. Applied in initializeResult once the node is up, by creating the default BIP39 HD
+    /// wallet from this recovery phrase — optionally encrypted with the given passphrase (an empty
+    /// passphrase means a passwordless wallet).
+    void setPendingWalletSetup(const std::string &mnemonic,
+                               const std::string &passphrase) {
+        m_pending_wallet_setup = true;
+        m_pending_mnemonic = mnemonic;
+        m_pending_passphrase = passphrase;
+    }
+#endif
+
 public Q_SLOTS:
     void initializeResult(bool success);
     void shutdownResult();
@@ -120,6 +134,10 @@ private:
 #ifdef ENABLE_WALLET
     PaymentServer *paymentServer{nullptr};
     WalletController *m_wallet_controller{nullptr};
+    // DeVault [2H item D]: first-run setup-wizard result, applied in initializeResult.
+    bool m_pending_wallet_setup{false};
+    std::string m_pending_mnemonic;
+    std::string m_pending_passphrase;
 #endif
     int returnValue;
     const PlatformStyle *platformStyle;

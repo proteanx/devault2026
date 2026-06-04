@@ -110,6 +110,8 @@ public Q_SLOTS:
     void changePassphrase();
     /** Ask for passphrase to unlock wallet temporarily */
     void unlockWallet();
+    /** DeVault: show the wallet's BIP39 recovery phrase (unlocking first if needed) */
+    void showRecoveryPhrase();
 
     /** Show used sending addresses */
     void usedSendingAddresses();

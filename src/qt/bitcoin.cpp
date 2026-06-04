@@ -53,6 +53,8 @@
 #include <QDebug>
 #include <QLibraryInfo>
 #include <QLocale>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QSettings>
 #include <QStringList>
@@ -396,6 +398,39 @@ void BitcoinApplication::initializeResult(bool success) {
     window->setClientModel(clientModel);
 #ifdef ENABLE_WALLET
     window->setWalletController(m_wallet_controller);
+
+    // DeVault [2H item D]: apply the first-run setup wizard's choice now that the node is up. Create
+    // the default BIP39 HD wallet from the recovery phrase collected before startup (and the optional
+    // encryption passphrase) via the same createwallet path the CLI uses — native m/44'/339'
+    // derivation; the mnemonic is stored, and encrypted when a passphrase was set. An already-present
+    // default wallet was auto-loaded during node init (see WalletInit::Construct), so returning users
+    // need nothing here. This runs before the window is shown so the GUI opens with the wallet present.
+    if (m_pending_wallet_setup) {
+        m_pending_wallet_setup = false;
+        Config &cfg = GetMutableConfig();
+        try {
+            UniValue::Array params;
+            params.push_back(UniValue(UniValue::VSTR, std::string()));        // wallet_name "" (default)
+            params.push_back(UniValue(false));                               // disable_private_keys
+            params.push_back(UniValue(false));                               // blank
+            params.push_back(UniValue(UniValue::VSTR, m_pending_passphrase)); // passphrase ("" => none)
+            params.push_back(UniValue(UniValue::VSTR, m_pending_mnemonic));   // mnemonic (restore phrase)
+            m_node.executeRpc(cfg, "createwallet", UniValue(std::move(params)), "");
+        } catch (const UniValue &) {
+            QMessageBox::warning(window, tr("DeVault"),
+                                 tr("Could not create the wallet from the recovery phrase."));
+        } catch (const std::exception &e) {
+            QMessageBox::warning(window, tr("DeVault"),
+                                 tr("Could not create the wallet: %1")
+                                     .arg(QString::fromStdString(e.what())));
+        } catch (...) {
+            QMessageBox::warning(window, tr("DeVault"),
+                                 tr("Could not create the wallet from the recovery phrase."));
+        }
+        // Don't keep the recovery phrase / passphrase in memory longer than necessary.
+        m_pending_mnemonic.clear();
+        m_pending_passphrase.clear();
+    }
 #endif
 
     // If -min option passed, start window minimized.
@@ -406,60 +441,6 @@ void BitcoinApplication::initializeResult(bool success) {
     }
     Q_EMIT splashFinished(window);
     Q_EMIT windowShown(window);
-
-#ifdef ENABLE_WALLET
-    // DeVault: BIP39 wallet wizard (ported from legacy qt/startoptions). The legacy single-wallet
-    // "collect the seed before node init" model does not map to V2 (post-init WalletController), so
-    // the wizard runs here, after the node is up, and drives the same createwallet/importmnemonic
-    // RPCs the CLI uses (BIP44 m/44'/339'/...). The gate is the on-disk existence of the "devault"
-    // wallet, which is DATADIR-SCOPED and self-correcting: if it exists we just load it; otherwise
-    // this is a fresh datadir and we show the wizard. (Deliberately NOT a QSettings flag — that lives
-    // outside the datadir, so it persisted across `-datadir` wipes; and it must never be marked done
-    // on an incomplete close, or the wizard would never reappear.)
-    {
-        Config &cfg = GetMutableConfig();
-        const bool devaultWalletExists = fs::exists(GetWalletDir() / "devault");
-        if (devaultWalletExists) {
-            // Existing seeded wallet for this datadir: load it so the GUI shows it (node init only
-            // auto-loads the default wallet, not named ones).
-            try {
-                UniValue p;
-                p.read("[\"devault\"]");
-                m_node.executeRpc(cfg, "loadwallet", p, "");
-            } catch (...) {
-                // already loaded, or a load error already surfaced in the log; ignore here
-            }
-        } else {
-            StartOptionsMain wizard(window);
-            wizard.exec();
-            std::string phrase;
-            for (const std::string &w : wizard.getWords()) {
-                phrase += (phrase.empty() ? "" : " ") + w;
-            }
-            // Only act when the user actually completed the wizard (non-empty seed). If they closed
-            // it, nothing is created, so the wizard reappears next launch (no devault wallet yet).
-            if (!phrase.empty()) {
-                try {
-                    UniValue cwParams, imParams;
-                    cwParams.read("[\"devault\"]");
-                    m_node.executeRpc(cfg, "createwallet", cwParams, "");
-                    imParams.read("[\"" + phrase + "\", 0, 100, true, true]");
-                    m_node.executeRpc(cfg, "importmnemonic", imParams, "/wallet/devault");
-                } catch (const UniValue &) {
-                    QMessageBox::warning(window, tr("DeVault"),
-                                         tr("Could not create the wallet from the seed."));
-                } catch (const std::exception &e) {
-                    QMessageBox::warning(window, tr("DeVault"),
-                                         tr("Could not create the wallet from the seed: %1")
-                                             .arg(QString::fromStdString(e.what())));
-                } catch (...) {
-                    QMessageBox::warning(window, tr("DeVault"),
-                                         tr("Could not create the wallet from the seed."));
-                }
-            }
-        }
-    }
-#endif
 
 #ifdef ENABLE_WALLET
     // Now that initialization/startup is done, process any command-line
@@ -526,6 +507,50 @@ static void SetupUIArgs() {
 }
 
 #ifndef BITCOIN_QT_TEST
+
+#ifdef ENABLE_WALLET
+//! DeVault [2H item D]: optionally collect a wallet-encryption passphrase during first-run setup.
+//! Returns the chosen passphrase, or an empty string for a passwordless wallet. Re-prompts until the
+//! two entries match. Encryption is offered (legacy DeVault forced it), but the user may decline.
+static std::string AskOptionalWalletPassphrase(QWidget *parent) {
+    const QMessageBox::StandardButton answer = QMessageBox::question(
+        parent, QObject::tr("Encrypt wallet?"),
+        QObject::tr(
+            "Do you want to protect this wallet with a passphrase?\n\n"
+            "If you encrypt it, the passphrase will be required to spend funds and to "
+            "view your recovery phrase. A forgotten passphrase cannot be recovered — but "
+            "your written-down recovery phrase can always restore the wallet.\n\n"
+            "You can also continue without a passphrase."),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes) {
+        return std::string();
+    }
+    for (;;) {
+        bool ok1 = false, ok2 = false;
+        const QString p1 = QInputDialog::getText(
+            parent, QObject::tr("Set passphrase"), QObject::tr("Enter a passphrase:"),
+            QLineEdit::Password, QString(), &ok1);
+        if (!ok1) {
+            return std::string();
+        }
+        const QString p2 = QInputDialog::getText(
+            parent, QObject::tr("Confirm passphrase"), QObject::tr("Re-enter the passphrase:"),
+            QLineEdit::Password, QString(), &ok2);
+        if (!ok2) {
+            return std::string();
+        }
+        if (p1 != p2) {
+            QMessageBox::warning(parent, QObject::tr("Encrypt wallet?"),
+                                 QObject::tr("The passphrases did not match. Please try again."));
+            continue;
+        }
+        if (p1.isEmpty()) {
+            return std::string();
+        }
+        return p1.toStdString();
+    }
+}
+#endif // ENABLE_WALLET
 
 int GuiMain(int argc, char *argv[]) {
 #ifdef WIN32
@@ -760,6 +785,32 @@ int GuiMain(int argc, char *argv[]) {
 
     // Get global config
     Config &config = GetMutableConfig();
+
+#ifdef ENABLE_WALLET
+    // DeVault [2H item D]: legacy-style first-run setup. BEFORE the node starts (and thus before it
+    // opens and begins syncing), if wallets are enabled and none is configured or already present on
+    // disk, require the user to create or restore a native BIP39 HD wallet and back up its recovery
+    // phrase. The phrase + optional passphrase are applied in initializeResult once the node is up
+    // (see setPendingWalletSetup) by creating the default wallet via the same createwallet path the
+    // CLI uses. Creating the wallet before sync also lets a freshly restored wallet pick up its
+    // history as blocks download. The gate matches WalletInit::Construct's default-wallet check, so a
+    // returning user (default wallet already on disk) skips the wizard and that wallet auto-loads.
+    if (!gArgs.GetBoolArg("-disablewallet", false) && !gArgs.IsArgSet("-wallet") &&
+        !fs::exists(GetWalletDir() / "wallet.dat")) {
+        StartOptionsMain wizard(nullptr);
+        wizard.exec();
+        std::string phrase;
+        for (const std::string &word : wizard.getWords()) {
+            phrase += (phrase.empty() ? "" : " ") + word;
+        }
+        if (phrase.empty()) {
+            // The user closed the wizard without creating a wallet. Do not silently start a
+            // wallet-less node; exit so the wizard reappears on the next launch (legacy behaviour).
+            return EXIT_SUCCESS;
+        }
+        app.setPendingWalletSetup(phrase, AskOptionalWalletPassphrase(nullptr));
+    }
+#endif
 
     if (gArgs.GetBoolArg("-splash", DEFAULT_SPLASHSCREEN) &&
         !gArgs.GetBoolArg("-min", DEFAULT_START_MINIMIZED)) {

@@ -153,6 +153,9 @@ namespace {
             return m_wallet.Unlock(wallet_passphrase);
         }
         bool isLocked() override { return m_wallet.IsLocked(); }
+        bool getMnemonic(std::string &mnemonic) override {
+            return m_wallet.GetMnemonic(mnemonic);
+        }
         bool changeWalletPassphrase(
             const SecureString &old_wallet_passphrase,
             const SecureString &new_wallet_passphrase) override {

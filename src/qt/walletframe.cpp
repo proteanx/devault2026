@@ -180,6 +180,13 @@ void WalletFrame::changePassphrase() {
     }
 }
 
+void WalletFrame::showRecoveryPhrase() {
+    WalletView *walletView = currentWalletView();
+    if (walletView) {
+        walletView->showRecoveryPhrase();
+    }
+}
+
 void WalletFrame::unlockWallet() {
     WalletView *walletView = currentWalletView();
     if (walletView) {
