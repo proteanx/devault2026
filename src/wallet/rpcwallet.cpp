@@ -3329,12 +3329,15 @@ static UniValue migratelegacywallet(const Config &config,
         }
     }
 
-    // --- 3. Replay the legacy derivation counters: pre-derive every previously-issued address so the
-    // rescan finds all funds regardless of address gaps (design note §7 step 5). ---
-    const int64_t needed = std::max<int64_t>(
-        {int64_t(legacy.externalCounter), int64_t(legacy.internalCounter),
-         int64_t(DEFAULT_KEYPOOL_SIZE)});
-    const unsigned int target = (unsigned int)std::min<int64_t>(needed + 100, 1000000);
+    // --- 3. Replay the legacy derivation counters: pre-derive every previously-issued address (the
+    // counters) plus a gap so the rescan finds all funds regardless of address gaps (design note §7
+    // step 5). We deliberately do NOT force the full default keypool here — that would derive ~1000
+    // extra keys per chain for no benefit and make migration noticeably slower (it freezes the GUI
+    // thread); the wallet tops its keypool up to the normal size as it is used. ---
+    const int64_t maxCounter =
+        std::max<int64_t>(legacy.externalCounter, legacy.internalCounter);
+    const unsigned int target =
+        (unsigned int)std::min<int64_t>(maxCounter + 100, 1000000);
     if (!wallet->TopUpKeyPool(target)) {
         fail("Failed to derive the wallet's keys.");
     }

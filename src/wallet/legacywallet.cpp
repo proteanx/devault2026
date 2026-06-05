@@ -15,12 +15,15 @@
 #include <wallet/mnemonic.h> // mnemonic::CheckSeedPhrase (seed-match cross-check)
 #include <wallet/walletutil.h> // WalletLocation
 
+#include <atomic>
 #include <cstring>
 #include <exception>
 #include <memory>
 #include <string>
 #include <tuple>
 #include <vector>
+
+std::atomic<bool> g_legacy_migration_pending{false};
 
 bool IsLegacyDeVaultWallet(const WalletLocation &location) {
     const fs::path wallet_path = location.GetPath();

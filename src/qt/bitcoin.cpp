@@ -433,41 +433,49 @@ void BitcoinApplication::initializeResult(bool success) {
         m_pending_passphrase.clear();
     }
 
-    // DeVault [3A.3]: apply a pending legacy-wallet migration collected before startup. Runs the same
-    // migratelegacywallet RPC the CLI uses (default args: recreate the legacy wallet natively, make it
-    // the default wallet.dat, keep the original as oldLegacy.dat, reuse the passphrase, and rescan).
-    // The rescan runs here on the GUI thread before the window is shown; for a large already-synced
-    // chain this can take a while — a future improvement could show progress.
+    // DeVault [3A.3]: apply a pending legacy-wallet migration by running the same migratelegacywallet
+    // RPC the CLI uses (default args: recreate the legacy wallet natively, make it the default
+    // wallet.dat, keep the original as oldLegacy.dat, reuse the passphrase, and rescan). This runs
+    // synchronously on the GUI thread before the window is shown — see DEVAULT_WALLET_MIGRATION_DESIGN.md
+    // §7. NOTE: on a large already-synced chain the rescan blocks the GUI for its duration (the dialog
+    // warns the user); a non-blocking progress bar needs the migration to run after full startup (like
+    // the console runs RPCs) — a documented follow-up.
     if (m_pending_migration) {
         m_pending_migration = false;
         Config &cfg = GetMutableConfig();
+        bool migrated = false;
+        QString backup = tr("oldLegacy.dat");
+        std::string errMsg;
         try {
             UniValue::Array params;
             params.push_back(UniValue(UniValue::VSTR, m_pending_migration_passphrase)); // passphrase
             const UniValue result =
                 m_node.executeRpc(cfg, "migratelegacywallet", UniValue(std::move(params)), "");
-            QString backup = tr("oldLegacy.dat");
             const UniValue &b = result["legacy_backup"];
             if (b.isStr()) {
                 backup = QString::fromStdString(b.getValStr());
             }
+            migrated = true;
+        } catch (const UniValue &e) {
+            const UniValue &m = e["message"];
+            errMsg = m.isStr() ? m.getValStr() : std::string("unknown error");
+        } catch (const std::exception &e) {
+            errMsg = e.what();
+        } catch (...) {
+            errMsg = "unknown error";
+        }
+        if (migrated) {
+            qWarning() << "[migration] succeeded; backup=" << backup;
             QMessageBox::information(
                 window, tr("DeVault"),
-                tr("Your legacy wallet was migrated successfully. Your original wallet was kept as "
-                   "\"%1\".")
+                tr("Your legacy wallet was migrated successfully. Your original wallet was kept "
+                   "as \"%1\".")
                     .arg(backup));
-        } catch (const UniValue &) {
-            QMessageBox::warning(window, tr("DeVault"),
-                                 tr("Could not migrate the legacy wallet. Check that the passphrase "
-                                    "is correct, then try again from the console with "
-                                    "\"migratelegacywallet\"."));
-        } catch (const std::exception &e) {
+        } else {
+            qWarning() << "[migration] FAILED:" << QString::fromStdString(errMsg);
             QMessageBox::warning(window, tr("DeVault"),
                                  tr("Could not migrate the legacy wallet: %1")
-                                     .arg(QString::fromStdString(e.what())));
-        } catch (...) {
-            QMessageBox::warning(window, tr("DeVault"),
-                                 tr("Could not migrate the legacy wallet."));
+                                     .arg(QString::fromStdString(errMsg)));
         }
         m_pending_migration_passphrase.clear();
     }
@@ -602,8 +610,10 @@ static bool AskLegacyMigration(QWidget *parent, std::string &passphraseOut) {
             "wallet format before it can be used.\n\n"
             "Migrate it now? Your original wallet will be kept, untouched, as \"oldLegacy.dat\", and "
             "the new wallet will use the same recovery phrase and addresses.\n\n"
-            "You will need your wallet passphrase. You can also do this later from the console with "
-            "the \"migratelegacywallet\" command."),
+            "You will need your wallet passphrase. After you confirm, the wallet is rebuilt and the "
+            "blockchain is scanned for your history — this can take a few minutes, so please wait for "
+            "the main window to appear. You can also do this later from the console with the "
+            "\"migratelegacywallet\" command."),
         QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
     if (answer != QMessageBox::Yes) {
         return false;
@@ -873,6 +883,8 @@ int GuiMain(int argc, char *argv[]) {
             // detector prompts them to migrate later from the console.
             std::string legacyPassphrase;
             if (AskLegacyMigration(nullptr, legacyPassphrase)) {
+                // Suppress the startup detector's redundant (and, here, init-blocking) warning.
+                g_legacy_migration_pending = true;
                 app.setPendingMigration(legacyPassphrase);
             }
         } else if (!walletExists) {

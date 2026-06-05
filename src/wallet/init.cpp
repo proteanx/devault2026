@@ -343,11 +343,15 @@ void WalletInit::Construct(NodeContext &node) const {
     for (const std::string &wallet_file : gArgs.GetArgs("-wallet")) {
         const WalletLocation location(wallet_file);
         if (IsLegacyDeVaultWallet(location)) {
-            InitWarning(strprintf(
-                _("Legacy DeVault wallet detected at %s and NOT loaded — it predates DeVault V2. "
-                  "Run 'migratelegacywallet \"<passphrase>\"' (or use the GUI setup wizard) to import "
-                  "it into a native wallet; your original is preserved as oldLegacy.dat."),
-                location.GetPath().string()));
+            // Skip the warning when the caller (the GUI) is already migrating this wallet — there it
+            // is redundant and, as a modal dialog, would block init before the migration can run.
+            if (!g_legacy_migration_pending) {
+                InitWarning(strprintf(
+                    _("Legacy DeVault wallet detected at %s and NOT loaded — it predates DeVault V2. "
+                      "Run 'migratelegacywallet \"<passphrase>\"' (or use the GUI setup wizard) to import "
+                      "it into a native wallet; your original is preserved as oldLegacy.dat."),
+                    location.GetPath().string()));
+            }
             continue;
         }
         wallet_files.push_back(wallet_file);

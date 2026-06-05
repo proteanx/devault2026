@@ -9,6 +9,7 @@
 #include <support/allocators/secure.h>
 #include <uint256.h>
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -16,6 +17,14 @@
 #include <vector>
 
 class WalletLocation;
+
+/**
+ * DeVault [3A.3]: set true by a caller (the GUI) that is about to migrate the legacy wallet itself, so
+ * the startup detector skips its "legacy wallet found — run migratelegacywallet" warning. That warning
+ * is for users who have not yet acted; when migration is already underway it is redundant (and, in the
+ * GUI, a modal warning would block init before the migration can run).
+ */
+extern std::atomic<bool> g_legacy_migration_pending;
 
 /**
  * DeVault [3A.2]: detect a legacy (pre-V2, Dash-Core-style HD) DeVault `wallet.dat`.
