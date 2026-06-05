@@ -18,6 +18,7 @@ add_library(wallet
 	dictionary.cpp
 	fees.cpp
 	init.cpp
+	legacywallet.cpp
 	mnemonic.cpp
 	psbtwallet.cpp
 	rpcdump.cpp

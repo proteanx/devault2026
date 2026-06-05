@@ -12,6 +12,7 @@
 #include <util/moneystr.h>
 #include <util/system.h>
 #include <validation.h>
+#include <wallet/legacywallet.h>
 #include <wallet/rpcdump.h>
 #include <wallet/rpcwallet.h>
 #include <wallet/wallet.h>
@@ -333,8 +334,27 @@ void WalletInit::Construct(NodeContext &node) const {
     if (!gArgs.IsArgSet("-wallet") && fs::exists(GetWalletDir() / "wallet.dat")) {
         gArgs.SoftSetArg("-wallet", "");
     }
+
+    // DeVault [3A.2]: filter out any legacy (pre-V2, Dash-style HD) wallet so that an unmigrated
+    // wallet.dat does not brick startup. Such a wallet predates DeVault V2 and cannot be loaded (its
+    // record layout is incompatible); we skip it and prompt the user to migrate. The legacy file is
+    // opened read-only and never modified. See DEVAULT_WALLET_MIGRATION_DESIGN.md §6.
+    std::vector<std::string> wallet_files;
+    for (const std::string &wallet_file : gArgs.GetArgs("-wallet")) {
+        const WalletLocation location(wallet_file);
+        if (IsLegacyDeVaultWallet(location)) {
+            InitWarning(strprintf(
+                _("Legacy DeVault wallet detected at %s and NOT loaded — it predates DeVault V2. "
+                  "Run 'migratelegacywallet \"<passphrase>\"' (or use the GUI setup wizard) to import "
+                  "it into a native wallet; your original is preserved as oldLegacy.dat."),
+                location.GetPath().string()));
+            continue;
+        }
+        wallet_files.push_back(wallet_file);
+    }
+
     node.chain_clients.emplace_back(
-        interfaces::MakeWalletClient(*node.chain, gArgs.GetArgs("-wallet")));
+        interfaces::MakeWalletClient(*node.chain, std::move(wallet_files)));
 }
 
 bool LoadWallets(const CChainParams &chainParams, interfaces::Chain &chain,

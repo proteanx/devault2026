@@ -518,7 +518,7 @@ static std::string AskOptionalWalletPassphrase(QWidget *parent) {
         QObject::tr(
             "Do you want to protect this wallet with a passphrase?\n\n"
             "If you encrypt it, the passphrase will be required to spend funds and to "
-            "view your recovery phrase. A forgotten passphrase cannot be recovered — but "
+            "view your recovery phrase. A forgotten passphrase cannot be recovered but "
             "your written-down recovery phrase can always restore the wallet.\n\n"
             "You can also continue without a passphrase."),
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
