@@ -150,6 +150,12 @@ private:
     // DeVault [3A.3]: pending legacy-wallet migration, applied in initializeResult.
     bool m_pending_migration{false};
     std::string m_pending_migration_passphrase;
+    // DeVault [3A.3]: after the fast (no-rescan) migration completes, the migrated wallet still needs
+    // its history scanned. That rescan is run AFTER the window is shown, on a worker thread, so the GUI
+    // stays responsive (a 1.7M-block scan would otherwise freeze it). These hold the hand-off state.
+    bool m_migration_needs_rescan{false};
+    QString m_migration_backup_name;
+    void startMigrationRescan();
 #endif
     int returnValue;
     const PlatformStyle *platformStyle;

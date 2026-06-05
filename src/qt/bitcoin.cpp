@@ -46,7 +46,10 @@
 
 #ifdef ENABLE_WALLET
 #include <qt/paymentserver.h>
+#include <qt/rpcconsole.h>     // RPCConsole::RPCExecuteCommandLine (run the rescan on a worker thread)
 #include <qt/walletcontroller.h>
+#include <qt/walletmodel.h>
+#include <rpc/protocol.h>      // JSONRPCError
 #endif
 
 #include <QApplication>
@@ -433,13 +436,12 @@ void BitcoinApplication::initializeResult(bool success) {
         m_pending_passphrase.clear();
     }
 
-    // DeVault [3A.3]: apply a pending legacy-wallet migration by running the same migratelegacywallet
-    // RPC the CLI uses (default args: recreate the legacy wallet natively, make it the default
-    // wallet.dat, keep the original as oldLegacy.dat, reuse the passphrase, and rescan). This runs
-    // synchronously on the GUI thread before the window is shown — see DEVAULT_WALLET_MIGRATION_DESIGN.md
-    // §7. NOTE: on a large already-synced chain the rescan blocks the GUI for its duration (the dialog
-    // warns the user); a non-blocking progress bar needs the migration to run after full startup (like
-    // the console runs RPCs) — a documented follow-up.
+    // DeVault [3A.3]: apply a pending legacy-wallet migration in two phases so the GUI never freezes on
+    // a large chain. PHASE 1 (here, synchronous, fast ~1-2s): run migratelegacywallet with rescan=FALSE
+    // — it recreates the legacy wallet natively, makes it the default wallet.dat, keeps the original as
+    // oldLegacy.dat, reuses the passphrase, and loads the new wallet — but does NOT scan the chain.
+    // PHASE 2 (startMigrationRescan(), after the window is shown): scan the now-loaded wallet's history
+    // on a worker thread with the standard rescan progress dialog. See DEVAULT_WALLET_MIGRATION_DESIGN.md §7.
     if (m_pending_migration) {
         m_pending_migration = false;
         Config &cfg = GetMutableConfig();
@@ -449,6 +451,10 @@ void BitcoinApplication::initializeResult(bool success) {
         try {
             UniValue::Array params;
             params.push_back(UniValue(UniValue::VSTR, m_pending_migration_passphrase)); // passphrase
+            params.push_back(UniValue(UniValue::VNULL)); // new_wallet_name -> default (swap)
+            params.push_back(UniValue(UniValue::VNULL)); // legacy_path     -> default
+            params.push_back(UniValue(UniValue::VNULL)); // new_passphrase  -> reuse the legacy one
+            params.push_back(UniValue(false));           // rescan          -> phase 2 does it async
             const UniValue result =
                 m_node.executeRpc(cfg, "migratelegacywallet", UniValue(std::move(params)), "");
             const UniValue &b = result["legacy_backup"];
@@ -464,20 +470,18 @@ void BitcoinApplication::initializeResult(bool success) {
         } catch (...) {
             errMsg = "unknown error";
         }
+        m_pending_migration_passphrase.clear();
         if (migrated) {
-            qWarning() << "[migration] succeeded; backup=" << backup;
-            QMessageBox::information(
-                window, tr("DeVault"),
-                tr("Your legacy wallet was migrated successfully. Your original wallet was kept "
-                   "as \"%1\".")
-                    .arg(backup));
+            qWarning() << "[migration] phase 1 ok; backup=" << backup;
+            // Defer the (potentially long) rescan to phase 2, after the window is up.
+            m_migration_needs_rescan = true;
+            m_migration_backup_name = backup;
         } else {
             qWarning() << "[migration] FAILED:" << QString::fromStdString(errMsg);
             QMessageBox::warning(window, tr("DeVault"),
                                  tr("Could not migrate the legacy wallet: %1")
                                      .arg(QString::fromStdString(errMsg)));
         }
-        m_pending_migration_passphrase.clear();
     }
 #endif
 
@@ -489,6 +493,17 @@ void BitcoinApplication::initializeResult(bool success) {
     }
     Q_EMIT splashFinished(window);
     Q_EMIT windowShown(window);
+
+#ifdef ENABLE_WALLET
+    // DeVault [3A.3]: phase 2 of a legacy-wallet migration — now that the window is up and the main
+    // event loop is running, scan the migrated wallet's history on a worker thread (responsive GUI +
+    // standard rescan progress dialog). Scheduled via a 0-delay timer so it runs after this slot
+    // returns, in the running main loop (the context in which worker-thread rescans are safe).
+    if (m_migration_needs_rescan) {
+        m_migration_needs_rescan = false;
+        QTimer::singleShot(0, this, &BitcoinApplication::startMigrationRescan);
+    }
+#endif
 
 #ifdef ENABLE_WALLET
     // Now that initialization/startup is done, process any command-line
@@ -509,6 +524,66 @@ void BitcoinApplication::initializeResult(bool success) {
 
     pollShutdownTimer->start(200);
 }
+
+#ifdef ENABLE_WALLET
+void BitcoinApplication::startMigrationRescan() {
+    if (!m_wallet_controller) {
+        return;
+    }
+    // After phase 1 the migrated wallet is the only loaded wallet.
+    const std::vector<WalletModel *> wallets = m_wallet_controller->getWallets();
+    WalletModel *const target = wallets.empty() ? nullptr : wallets.front();
+    if (target == nullptr) {
+        qWarning() << "[migration] phase 2: no wallet to rescan";
+        return;
+    }
+    const QString backup = m_migration_backup_name;
+    auto okPtr = std::make_shared<bool>(false);
+    auto errPtr = std::make_shared<QString>();
+
+    // Run rescanblockchain on a worker thread — the same pattern the RPC console uses — so the GUI
+    // stays responsive while a large chain is scanned. The standard WalletView rescan-progress dialog
+    // (driven by WalletModel::showProgress) appears automatically; its Cancel button aborts the scan.
+    QThread *const thread = QThread::create([this, target, okPtr, errPtr]() {
+        try {
+            std::string out;
+            const bool parsed = RPCConsole::RPCExecuteCommandLine(
+                m_node, out, "rescanblockchain", nullptr, target);
+            *okPtr = parsed;
+            if (!parsed) {
+                *errPtr = QString::fromStdString(out);
+            }
+        } catch (const JSONRPCError &e) {
+            *errPtr = QString::fromStdString(e.message);
+        } catch (const std::exception &e) {
+            *errPtr = QString::fromStdString(e.what());
+        } catch (...) {
+            *errPtr = QStringLiteral("unknown error");
+        }
+    });
+    connect(thread, &QThread::finished, this,
+            [this, thread, okPtr, errPtr, backup]() {
+                thread->deleteLater();
+                if (*okPtr) {
+                    qWarning() << "[migration] phase 2 rescan complete";
+                    QMessageBox::information(
+                        window, tr("DeVault"),
+                        tr("Your legacy wallet was migrated and your transaction history has been "
+                           "restored. Your original wallet was kept as \"%1\".")
+                            .arg(backup));
+                } else {
+                    qWarning() << "[migration] phase 2 rescan failed:" << *errPtr;
+                    QMessageBox::warning(
+                        window, tr("DeVault"),
+                        tr("Your wallet was migrated, but scanning its transaction history did not "
+                           "finish (%1). Your balance may be incomplete — you can rescan from the "
+                           "console with the \"rescanblockchain\" command.")
+                            .arg(errPtr->isEmpty() ? tr("canceled") : *errPtr));
+                }
+            });
+    thread->start();
+}
+#endif
 
 void BitcoinApplication::shutdownResult() {
     // Exit second main loop invocation after shutdown finished.

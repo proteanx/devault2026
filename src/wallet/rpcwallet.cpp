@@ -3210,15 +3210,13 @@ static UniValue migratelegacywallet(const Config &config,
                            "A passphrase is required to decrypt the legacy wallet.");
     }
 
-    // An empty name (the default) means "become the default wallet.dat": build the migrated wallet
-    // under a staging name, then build-then-swap it into place as the default (renaming the legacy
-    // file to oldLegacy.dat). A non-empty name creates a named wallet and leaves the legacy file in
-    // place. (Operator decision 2026-06-04 — see DEVAULT_WALLET_MIGRATION_DESIGN.md §6/§7.)
+    // An empty name (the default) means "become the default wallet.dat": move the legacy file aside to
+    // oldLegacy.dat and create the migrated wallet directly as the default. A non-empty name creates a
+    // named wallet and leaves the legacy file in place. (Operator decision 2026-06-04 — see
+    // DEVAULT_WALLET_MIGRATION_DESIGN.md §6/§7.)
     const std::string new_wallet_name =
         request.params[1].isNull() ? std::string("") : request.params[1].get_str();
     const bool make_default = new_wallet_name.empty();
-    const std::string build_name =
-        make_default ? std::string("migration-staging") : new_wallet_name;
 
     fs::path legacy_path;
     if (!request.params[2].isNull() && !request.params[2].get_str().empty()) {
@@ -3277,23 +3275,51 @@ static UniValue migratelegacywallet(const Config &config,
                            "migration is not yet supported.");
     }
 
-    // --- 2. Create the native BIP39 HD wallet (blank), encrypt it, and install the recovered seed. ---
-    // Build under `build_name` (a staging name when targeting the default wallet); the swap to the
-    // default wallet.dat happens only after the wallet is fully built (build-then-swap, step 7).
+    // --- 2. Install the migrated wallet (move-aside, then create directly at the final location). ---
+    // The seed is recovered and verified, so we may now touch the original. To make the migrated wallet
+    // the default we move the legacy wallet.dat aside to oldLegacy.dat FIRST, then create the native
+    // wallet directly as the default. We deliberately do NOT build a transient "staging" wallet and
+    // unload it afterwards: in the GUI the wallet manager (and splash) hold a shared_ptr to every loaded
+    // wallet, so unloading a just-created wallet would block forever (UnloadWallet waits for sole
+    // ownership). Creating the final wallet directly avoids any unload, and works in both CLI and GUI.
+    std::string backup_name;
     if (make_default) {
-        // Clean up any leftover staging wallet from a previous interrupted run.
-        if (GetWallet(build_name) == nullptr) {
+        const fs::path walletdir = GetWalletDir();
+        const fs::path defaultFile = walletdir / "wallet.dat";
+        if (fs::exists(defaultFile)) {
+            // Move the legacy wallet aside — never overwrite an existing backup.
+            fs::path backup = walletdir / "oldLegacy.dat";
+            for (int n = 1; fs::exists(backup); ++n) {
+                backup = walletdir / strprintf("oldLegacy-%d.dat", n);
+            }
             try {
-                fs::remove_all(GetWalletDir() / build_name);
-            } catch (const std::exception &) {
+                fs::rename(defaultFile, backup);
+                backup_name = backup.filename().string();
+            } catch (const std::exception &e) {
+                throw JSONRPCError(
+                    RPC_WALLET_ERROR,
+                    std::string("Could not move the legacy wallet aside: ") + e.what());
             }
         }
-    }
-    WalletLocation location(build_name);
-    if (location.Exists() || GetWallet(build_name) != nullptr) {
+        // Remove the legacy datadir's stale Berkeley DB environment artifacts (left by the startup
+        // detector's read-only open) so the new default wallet opens in a clean environment.
+        try {
+            for (const auto &entry : fs::directory_iterator(walletdir)) {
+                const std::string fn = entry.path().filename().string();
+                if (fn.rfind("__db.", 0) == 0 || fn.rfind("log.", 0) == 0 ||
+                    fn == ".walletlock" || fn == "database") {
+                    fs::remove_all(entry.path());
+                }
+            }
+        } catch (const std::exception &) {
+        }
+    } else if (WalletLocation(new_wallet_name).Exists() ||
+               GetWallet(new_wallet_name) != nullptr) {
         throw JSONRPCError(RPC_WALLET_ERROR,
-                           strprintf("Wallet %s already exists.", build_name));
+                           strprintf("Wallet %s already exists.", new_wallet_name));
     }
+
+    WalletLocation location(new_wallet_name); // "" => the default wallet.dat (now free)
     std::string warning;
     if (!CWallet::Verify(chainParams, *g_rpc_node->chain, location, false, error, warning)) {
         throw JSONRPCError(RPC_WALLET_ERROR,
@@ -3430,74 +3456,9 @@ static UniValue migratelegacywallet(const Config &config,
         }
     }
 
-    // --- 7. Build-then-swap: install the fully-built migrated wallet as the default wallet.dat and
-    // move the legacy file to oldLegacy.dat. The original is touched ONLY here, after the new wallet
-    // is built + rescanned, so a failure before this point never disturbs it. ---
-    std::string final_name = wallet->GetName();
-    std::string backup_name;
-    if (make_default) {
-        const fs::path walletdir = GetWalletDir();
-        const fs::path stagingFile = walletdir / build_name / "wallet.dat";
-        const fs::path defaultFile = walletdir / "wallet.dat";
-
-        // (a) Unload the staging wallet to flush + close its Berkeley DB handles.
-        {
-            std::shared_ptr<CWallet> w = wallet;
-            wallet.reset();
-            RemoveWallet(w);
-            UnloadWallet(std::move(w));
-        }
-
-        try {
-            // (b) Move the legacy wallet aside — never overwrite an existing backup.
-            if (fs::exists(defaultFile)) {
-                fs::path backup = walletdir / "oldLegacy.dat";
-                for (int n = 1; fs::exists(backup); ++n) {
-                    backup = walletdir / strprintf("oldLegacy-%d.dat", n);
-                }
-                fs::rename(defaultFile, backup);
-                backup_name = backup.filename().string();
-            }
-            // (c) Remove the legacy datadir's stale Berkeley DB environment artifacts (left by the
-            //     startup detector's read-only open) so the new default wallet opens cleanly.
-            for (const auto &entry : fs::directory_iterator(walletdir)) {
-                const std::string fn = entry.path().filename().string();
-                if (fn.rfind("__db.", 0) == 0 || fn.rfind("log.", 0) == 0 ||
-                    fn == ".walletlock" || fn == "database") {
-                    fs::remove_all(entry.path());
-                }
-            }
-            // (d) Move the freshly built wallet into place as the default, and drop the staging dir.
-            fs::rename(stagingFile, defaultFile);
-            fs::remove_all(walletdir / build_name);
-        } catch (const std::exception &e) {
-            throw JSONRPCError(
-                RPC_WALLET_ERROR,
-                std::string("The migrated wallet was built, but installing it as the default failed: ") +
-                    e.what() +
-                    ". Your original wallet is safe (as oldLegacy.dat if already renamed); the migrated "
-                    "wallet's data is in the '" +
-                    build_name + "' wallet directory.");
-        }
-
-        // (e) Load the migrated wallet as the default "" wallet.
-        WalletLocation defLoc("");
-        std::string verr, vwarn;
-        if (!CWallet::Verify(chainParams, *g_rpc_node->chain, defLoc, false, verr, vwarn)) {
-            throw JSONRPCError(RPC_WALLET_ERROR,
-                               "Migrated wallet installed as the default but failed verification: " +
-                                   verr);
-        }
-        std::shared_ptr<CWallet> def =
-            CWallet::CreateWalletFromFile(chainParams, *g_rpc_node->chain, defLoc, 0);
-        if (!def) {
-            throw JSONRPCError(RPC_WALLET_ERROR,
-                               "Migrated wallet installed as the default but could not be loaded.");
-        }
-        AddWallet(def);
-        def->postInitProcess();
-        final_name = def->GetName(); // "" — the default wallet
-    }
+    // The migrated wallet was created directly at its final location (step 2), so there is no swap to
+    // perform — it is already loaded as the default (or named) wallet.
+    const std::string final_name = wallet->GetName();
 
     UniValue::Object obj;
     obj.emplace_back("name", final_name);
