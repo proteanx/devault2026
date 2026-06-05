@@ -12,6 +12,7 @@
 #include <core_io.h>
 #include <init.h>
 #include <interfaces/chain.h>
+#include <key.h>
 #include <key_io.h>
 #include <net.h>
 #include <outputtype.h>
@@ -27,6 +28,7 @@
 #include <util/system.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
+#include <wallet/legacywallet.h>
 #include <wallet/psbtwallet.h>
 #include <wallet/rpcwallet.h>
 #include <wallet/mnemonic.h>
@@ -3172,6 +3174,352 @@ static UniValue createwallet(const Config &config,
     return obj;
 }
 
+static UniValue migratelegacywallet(const Config &config,
+                                    const JSONRPCRequest &request) {
+    if (request.fHelp || request.params.size() < 1 || request.params.size() > 5) {
+        throw std::runtime_error(
+            RPCHelpMan{
+                "migratelegacywallet",
+                "\nMigrate a legacy (pre-V2, Dash-style HD) DeVault wallet into a native BIP39 HD "
+                "wallet.\n"
+                "Reads the legacy wallet.dat, decrypts its recovery phrase with your passphrase, and "
+                "recreates it as a native DeVault wallet whose addresses are byte-identical — so your "
+                "funds and payout addresses are preserved. The legacy file is opened read-only (via a "
+                "private copy) and is never modified. A rescan then recovers your balance.\n",
+                {
+                    {"passphrase", RPCArg::Type::STR, /* opt */ false, /* default_val */ "", "The passphrase of the legacy wallet (required to decrypt its seed)."},
+                    {"new_wallet_name", RPCArg::Type::STR, /* opt */ true, /* default_val */ "\"\"", "Name for the new native wallet. The default (empty) makes the migrated wallet the default wallet.dat and renames the legacy file to oldLegacy.dat (a true in-place drop-in); a non-empty name creates a named wallet and leaves the legacy file untouched."},
+                    {"legacy_path", RPCArg::Type::STR, /* opt */ true, /* default_val */ "<walletdir>/wallet.dat", "Path to the legacy wallet.dat (file or its directory)."},
+                    {"new_passphrase", RPCArg::Type::STR, /* opt */ true, /* default_val */ "<passphrase>", "Passphrase to encrypt the new wallet (defaults to reusing the legacy passphrase). Pass \"\" for a passwordless wallet."},
+                    {"rescan", RPCArg::Type::BOOL, /* opt */ true, /* default_val */ "true", "Rescan the chain for the migrated wallet's transactions."},
+                }}
+                .ToString() +
+            "\nNote: a full rescan can take a long time on mainnet.\n"
+            "\nExamples:\n" +
+            HelpExampleCli("migratelegacywallet", "\"my passphrase\"") +
+            HelpExampleRpc("migratelegacywallet", "\"my passphrase\", \"migrated\""));
+    }
+
+    const CChainParams &chainParams = config.GetChainParams();
+
+    SecureString passphrase;
+    passphrase.reserve(100);
+    passphrase = request.params[0].get_str().c_str();
+    if (passphrase.empty()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER,
+                           "A passphrase is required to decrypt the legacy wallet.");
+    }
+
+    // An empty name (the default) means "become the default wallet.dat": build the migrated wallet
+    // under a staging name, then build-then-swap it into place as the default (renaming the legacy
+    // file to oldLegacy.dat). A non-empty name creates a named wallet and leaves the legacy file in
+    // place. (Operator decision 2026-06-04 — see DEVAULT_WALLET_MIGRATION_DESIGN.md §6/§7.)
+    const std::string new_wallet_name =
+        request.params[1].isNull() ? std::string("") : request.params[1].get_str();
+    const bool make_default = new_wallet_name.empty();
+    const std::string build_name =
+        make_default ? std::string("migration-staging") : new_wallet_name;
+
+    fs::path legacy_path;
+    if (!request.params[2].isNull() && !request.params[2].get_str().empty()) {
+        legacy_path = fs::path(request.params[2].get_str());
+    } else {
+        legacy_path = GetWalletDir() / "wallet.dat";
+    }
+    if (fs::is_directory(legacy_path)) {
+        legacy_path /= "wallet.dat";
+    }
+    if (!fs::exists(legacy_path)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER,
+                           strprintf("No legacy wallet found at %s", legacy_path.string()));
+    }
+
+    // Operator decision (2026-06-04): the new wallet reuses the legacy passphrase by default.
+    SecureString new_passphrase;
+    new_passphrase.reserve(100);
+    if (!request.params[3].isNull()) {
+        new_passphrase = request.params[3].get_str().c_str();
+    } else {
+        new_passphrase = passphrase;
+    }
+
+    const bool rescan = request.params[4].isNull() ? true : request.params[4].get_bool();
+
+    // --- 1. Copy the legacy wallet into a private temp dir and read+decrypt it there. We never open
+    // the original in place (BDB would create environment files alongside it). ---
+    LegacyWalletContents legacy;
+    std::string error;
+    {
+        fs::path tmpdir = GetDataDir() / "legacy-migration-tmp";
+        try {
+            fs::remove_all(tmpdir);
+            fs::create_directories(tmpdir);
+            fs::copy_file(legacy_path, tmpdir / "wallet.dat");
+        } catch (const std::exception &e) {
+            throw JSONRPCError(RPC_WALLET_ERROR,
+                               std::string("Could not stage the legacy wallet for reading: ") +
+                                   e.what());
+        }
+        const bool ok = ReadLegacyWallet(tmpdir / "wallet.dat", passphrase, legacy, error);
+        try {
+            fs::remove_all(tmpdir);
+        } catch (const std::exception &) {
+            // best effort cleanup
+        }
+        if (!ok) {
+            throw JSONRPCError(RPC_WALLET_PASSPHRASE_INCORRECT, error);
+        }
+    }
+
+    if (legacy.mnemonic.empty()) {
+        throw JSONRPCError(RPC_WALLET_ERROR,
+                           "The legacy wallet has no recovery phrase (seed-only wallet); raw-seed "
+                           "migration is not yet supported.");
+    }
+
+    // --- 2. Create the native BIP39 HD wallet (blank), encrypt it, and install the recovered seed. ---
+    // Build under `build_name` (a staging name when targeting the default wallet); the swap to the
+    // default wallet.dat happens only after the wallet is fully built (build-then-swap, step 7).
+    if (make_default) {
+        // Clean up any leftover staging wallet from a previous interrupted run.
+        if (GetWallet(build_name) == nullptr) {
+            try {
+                fs::remove_all(GetWalletDir() / build_name);
+            } catch (const std::exception &) {
+            }
+        }
+    }
+    WalletLocation location(build_name);
+    if (location.Exists() || GetWallet(build_name) != nullptr) {
+        throw JSONRPCError(RPC_WALLET_ERROR,
+                           strprintf("Wallet %s already exists.", build_name));
+    }
+    std::string warning;
+    if (!CWallet::Verify(chainParams, *g_rpc_node->chain, location, false, error, warning)) {
+        throw JSONRPCError(RPC_WALLET_ERROR,
+                           "Wallet file verification failed: " + std::move(error));
+    }
+
+    std::shared_ptr<CWallet> wallet = CWallet::CreateWalletFromFile(
+        chainParams, *g_rpc_node->chain, location, WALLET_FLAG_BLANK_WALLET);
+    if (!wallet) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Wallet creation failed.");
+    }
+    AddWallet(wallet);
+
+    // From here on, clean up the half-built wallet on any failure.
+    auto fail = [&](const std::string &msg) -> void {
+        RemoveWallet(wallet);
+        throw JSONRPCError(RPC_WALLET_ERROR, msg);
+    };
+
+    if (!new_passphrase.empty()) {
+        if (!wallet->EncryptWallet(new_passphrase)) {
+            fail("Failed to encrypt the new wallet.");
+        }
+        if (!wallet->Unlock(new_passphrase)) {
+            fail("The new wallet was encrypted but could not be unlocked.");
+        }
+    }
+
+    {
+        const std::string phrase(legacy.mnemonic.begin(), legacy.mnemonic.end());
+        if (!wallet->SetHDSeedFromMnemonic(phrase)) {
+            fail("Failed to install the recovered BIP39 seed.");
+        }
+    }
+
+    // --- 3. Replay the legacy derivation counters: pre-derive every previously-issued address so the
+    // rescan finds all funds regardless of address gaps (design note §7 step 5). ---
+    const int64_t needed = std::max<int64_t>(
+        {int64_t(legacy.externalCounter), int64_t(legacy.internalCounter),
+         int64_t(DEFAULT_KEYPOOL_SIZE)});
+    const unsigned int target = (unsigned int)std::min<int64_t>(needed + 100, 1000000);
+    if (!wallet->TopUpKeyPool(target)) {
+        fail("Failed to derive the wallet's keys.");
+    }
+
+    // --- 4. Carry over the address book, dest-data, redeem scripts, and watch-only scripts. ---
+    int labels_imported = 0, scripts_imported = 0, watchonly_imported = 0;
+    {
+        // Merge name + purpose records by address.
+        std::map<std::string, std::pair<std::string, std::string>> book;
+        for (const auto &[addr, label] : legacy.addressNames) {
+            book[addr].first = label;
+        }
+        for (const auto &[addr, purpose] : legacy.addressPurposes) {
+            book[addr].second = purpose;
+        }
+        for (const auto &[addr, lp] : book) {
+            const CTxDestination dest = DecodeDestination(addr, chainParams);
+            if (IsValidDestination(dest)) {
+                wallet->SetAddressBook(dest, lp.first,
+                                       lp.second.empty() ? "receive" : lp.second);
+                ++labels_imported;
+            }
+        }
+        for (const auto &[ak, value] : legacy.destData) {
+            const CTxDestination dest = DecodeDestination(ak.first, chainParams);
+            if (IsValidDestination(dest)) {
+                wallet->AddDestData(dest, ak.second, value);
+            }
+        }
+        for (const auto &bytes : legacy.redeemScripts) {
+            try {
+                const CScript script(bytes.begin(), bytes.end());
+                if (wallet->AddCScript(script, /*is_p2sh_32=*/false,
+                                       /*chipVmLimitsEnabled=*/false)) {
+                    ++scripts_imported;
+                }
+            } catch (const std::exception &) {
+            }
+        }
+        for (const auto &bytes : legacy.watchScripts) {
+            try {
+                const CScript script(bytes.begin(), bytes.end());
+                if (wallet->AddWatchOnly(script, /*nCreateTime=*/1)) {
+                    ++watchonly_imported;
+                }
+            } catch (const std::exception &) {
+            }
+        }
+    }
+
+    // --- 5. Rescan the chain from genesis to recover the wallet's transactions/balance. ---
+    if (rescan) {
+        WalletRescanReserver reserver(wallet.get());
+        if (!reserver.reserve()) {
+            fail("Could not begin a rescan (one is already in progress).");
+        }
+        BlockHash start_block;
+        {
+            auto locked_chain = wallet->chain().lock();
+            if (locked_chain->getHeight()) {
+                start_block = locked_chain->getBlockHash(0);
+            }
+        }
+        CWallet::ScanResult scan = wallet->ScanForWalletTransactions(
+            start_block, BlockHash(), reserver, true /* fUpdate */);
+        if (scan.status != CWallet::ScanResult::SUCCESS) {
+            fail("Rescan failed for the migrated wallet.");
+        }
+    }
+
+    if (!new_passphrase.empty()) {
+        wallet->Lock();
+    }
+    wallet->postInitProcess();
+
+    // --- 6. Compute the first external address (m/44'/coin'/0'/0/0) from the recovered seed, as a
+    // verifiable fingerprint of the migration (independent of the wallet object). ---
+    std::string first_address;
+    {
+        const int coinType = chainParams.ExtCoinType();
+        const uint32_t HARD = 0x80000000;
+        CExtKey master, purpose, coinKey, acctKey, chainKey, childKey;
+        master.SetSeed(legacy.seed.data(), legacy.seed.size());
+        if (master.Derive(purpose, 44 | HARD) &&
+            purpose.Derive(coinKey, uint32_t(coinType) | HARD) &&
+            coinKey.Derive(acctKey, 0 | HARD) && acctKey.Derive(chainKey, 0) &&
+            chainKey.Derive(childKey, 0) && childKey.key.IsValid()) {
+            first_address = EncodeDestination(
+                CTxDestination(childKey.key.GetPubKey().GetID()), config, false);
+        }
+    }
+
+    // --- 7. Build-then-swap: install the fully-built migrated wallet as the default wallet.dat and
+    // move the legacy file to oldLegacy.dat. The original is touched ONLY here, after the new wallet
+    // is built + rescanned, so a failure before this point never disturbs it. ---
+    std::string final_name = wallet->GetName();
+    std::string backup_name;
+    if (make_default) {
+        const fs::path walletdir = GetWalletDir();
+        const fs::path stagingFile = walletdir / build_name / "wallet.dat";
+        const fs::path defaultFile = walletdir / "wallet.dat";
+
+        // (a) Unload the staging wallet to flush + close its Berkeley DB handles.
+        {
+            std::shared_ptr<CWallet> w = wallet;
+            wallet.reset();
+            RemoveWallet(w);
+            UnloadWallet(std::move(w));
+        }
+
+        try {
+            // (b) Move the legacy wallet aside — never overwrite an existing backup.
+            if (fs::exists(defaultFile)) {
+                fs::path backup = walletdir / "oldLegacy.dat";
+                for (int n = 1; fs::exists(backup); ++n) {
+                    backup = walletdir / strprintf("oldLegacy-%d.dat", n);
+                }
+                fs::rename(defaultFile, backup);
+                backup_name = backup.filename().string();
+            }
+            // (c) Remove the legacy datadir's stale Berkeley DB environment artifacts (left by the
+            //     startup detector's read-only open) so the new default wallet opens cleanly.
+            for (const auto &entry : fs::directory_iterator(walletdir)) {
+                const std::string fn = entry.path().filename().string();
+                if (fn.rfind("__db.", 0) == 0 || fn.rfind("log.", 0) == 0 ||
+                    fn == ".walletlock" || fn == "database") {
+                    fs::remove_all(entry.path());
+                }
+            }
+            // (d) Move the freshly built wallet into place as the default, and drop the staging dir.
+            fs::rename(stagingFile, defaultFile);
+            fs::remove_all(walletdir / build_name);
+        } catch (const std::exception &e) {
+            throw JSONRPCError(
+                RPC_WALLET_ERROR,
+                std::string("The migrated wallet was built, but installing it as the default failed: ") +
+                    e.what() +
+                    ". Your original wallet is safe (as oldLegacy.dat if already renamed); the migrated "
+                    "wallet's data is in the '" +
+                    build_name + "' wallet directory.");
+        }
+
+        // (e) Load the migrated wallet as the default "" wallet.
+        WalletLocation defLoc("");
+        std::string verr, vwarn;
+        if (!CWallet::Verify(chainParams, *g_rpc_node->chain, defLoc, false, verr, vwarn)) {
+            throw JSONRPCError(RPC_WALLET_ERROR,
+                               "Migrated wallet installed as the default but failed verification: " +
+                                   verr);
+        }
+        std::shared_ptr<CWallet> def =
+            CWallet::CreateWalletFromFile(chainParams, *g_rpc_node->chain, defLoc, 0);
+        if (!def) {
+            throw JSONRPCError(RPC_WALLET_ERROR,
+                               "Migrated wallet installed as the default but could not be loaded.");
+        }
+        AddWallet(def);
+        def->postInitProcess();
+        final_name = def->GetName(); // "" — the default wallet
+    }
+
+    UniValue::Object obj;
+    obj.emplace_back("name", final_name);
+    obj.emplace_back("is_default_wallet", make_default);
+    if (!backup_name.empty()) {
+        obj.emplace_back("legacy_backup", backup_name);
+    }
+    obj.emplace_back("source_encrypted", legacy.encrypted);
+    obj.emplace_back("external_keys", int64_t(legacy.externalCounter));
+    obj.emplace_back("internal_keys", int64_t(legacy.internalCounter));
+    obj.emplace_back("labels_imported", labels_imported);
+    obj.emplace_back("scripts_imported", scripts_imported);
+    obj.emplace_back("watchonly_imported", watchonly_imported);
+    obj.emplace_back("first_address", first_address);
+    obj.emplace_back("rescanned", rescan);
+    if (legacy.hasBLS) {
+        obj.emplace_back(
+            "bls_warning",
+            "This wallet used BLS keys (account 1). DeVault V2 cannot re-derive BLS keys; any "
+            "BLS-derived balance is NOT migrated. Contact the DeVault team if affected.");
+    }
+    obj.emplace_back("warning", std::move(warning));
+    return obj;
+}
+
 static UniValue unloadwallet(const Config &config,
                              const JSONRPCRequest &request) {
     if (request.fHelp || request.params.size() > 1) {
@@ -4618,6 +4966,7 @@ static const ContextFreeRPCCommand commands[] = {
     { "wallet",             "addmultisigaddress",           addmultisigaddress,           {"nrequired","keys","label"} },
     { "wallet",             "backupwallet",                 backupwallet,                 {"destination"} },
     { "wallet",             "createwallet",                 createwallet,                 {"wallet_name", "disable_private_keys", "blank", "passphrase", "mnemonic"} },
+    { "wallet",             "migratelegacywallet",          migratelegacywallet,          {"passphrase", "new_wallet_name", "legacy_path", "new_passphrase", "rescan"} },
     { "wallet",             "encryptwallet",                encryptwallet,                {"passphrase"} },
     { "wallet",             "getaddressesbylabel",          getaddressesbylabel,          {"label"} },
     { "wallet",             "getaddressinfo",               getaddressinfo,               {"address"} },

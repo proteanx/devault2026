@@ -177,6 +177,7 @@ static const CRPCConvertParam vRPCConvertParams[] = {
     {"importmnemonic", 2, "count"},
     {"importmnemonic", 3, "internal"},
     {"importmnemonic", 4, "rescan"},
+    {"migratelegacywallet", 4, "rescan"},
     {"getnodeaddresses", 0, "count"},
     { "addpeeraddress", 1, "port"},
     {"stop", 0, "wait"},
