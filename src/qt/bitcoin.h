@@ -107,6 +107,15 @@ public:
         m_pending_mnemonic = mnemonic;
         m_pending_passphrase = passphrase;
     }
+
+    /// DeVault [3A.3]: record a pending legacy-wallet migration, collected before the node starts.
+    /// Applied in initializeResult once the node is up, by running the migratelegacywallet RPC (which
+    /// recreates the legacy wallet natively, makes it the default wallet.dat, and keeps the original as
+    /// oldLegacy.dat).
+    void setPendingMigration(const std::string &legacyPassphrase) {
+        m_pending_migration = true;
+        m_pending_migration_passphrase = legacyPassphrase;
+    }
 #endif
 
 public Q_SLOTS:
@@ -138,6 +147,9 @@ private:
     bool m_pending_wallet_setup{false};
     std::string m_pending_mnemonic;
     std::string m_pending_passphrase;
+    // DeVault [3A.3]: pending legacy-wallet migration, applied in initializeResult.
+    bool m_pending_migration{false};
+    std::string m_pending_migration_passphrase;
 #endif
     int returnValue;
     const PlatformStyle *platformStyle;

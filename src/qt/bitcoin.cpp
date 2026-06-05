@@ -24,6 +24,7 @@
 #include <qt/clientmodel.h>
 
 #include <univalue.h>
+#include <wallet/legacywallet.h>
 #include <wallet/walletutil.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
@@ -431,6 +432,45 @@ void BitcoinApplication::initializeResult(bool success) {
         m_pending_mnemonic.clear();
         m_pending_passphrase.clear();
     }
+
+    // DeVault [3A.3]: apply a pending legacy-wallet migration collected before startup. Runs the same
+    // migratelegacywallet RPC the CLI uses (default args: recreate the legacy wallet natively, make it
+    // the default wallet.dat, keep the original as oldLegacy.dat, reuse the passphrase, and rescan).
+    // The rescan runs here on the GUI thread before the window is shown; for a large already-synced
+    // chain this can take a while — a future improvement could show progress.
+    if (m_pending_migration) {
+        m_pending_migration = false;
+        Config &cfg = GetMutableConfig();
+        try {
+            UniValue::Array params;
+            params.push_back(UniValue(UniValue::VSTR, m_pending_migration_passphrase)); // passphrase
+            const UniValue result =
+                m_node.executeRpc(cfg, "migratelegacywallet", UniValue(std::move(params)), "");
+            QString backup = tr("oldLegacy.dat");
+            const UniValue &b = result["legacy_backup"];
+            if (b.isStr()) {
+                backup = QString::fromStdString(b.getValStr());
+            }
+            QMessageBox::information(
+                window, tr("DeVault"),
+                tr("Your legacy wallet was migrated successfully. Your original wallet was kept as "
+                   "\"%1\".")
+                    .arg(backup));
+        } catch (const UniValue &) {
+            QMessageBox::warning(window, tr("DeVault"),
+                                 tr("Could not migrate the legacy wallet. Check that the passphrase "
+                                    "is correct, then try again from the console with "
+                                    "\"migratelegacywallet\"."));
+        } catch (const std::exception &e) {
+            QMessageBox::warning(window, tr("DeVault"),
+                                 tr("Could not migrate the legacy wallet: %1")
+                                     .arg(QString::fromStdString(e.what())));
+        } catch (...) {
+            QMessageBox::warning(window, tr("DeVault"),
+                                 tr("Could not migrate the legacy wallet."));
+        }
+        m_pending_migration_passphrase.clear();
+    }
 #endif
 
     // If -min option passed, start window minimized.
@@ -549,6 +589,35 @@ static std::string AskOptionalWalletPassphrase(QWidget *parent) {
         }
         return p1.toStdString();
     }
+}
+
+//! DeVault [3A.3]: offer to migrate a detected legacy wallet. Returns true and sets `passphraseOut`
+//! if the user chose to migrate and entered a passphrase; returns false if they declined or cancelled
+//! (in which case the node boots wallet-less and the user can migrate later via `migratelegacywallet`).
+static bool AskLegacyMigration(QWidget *parent, std::string &passphraseOut) {
+    const QMessageBox::StandardButton answer = QMessageBox::question(
+        parent, QObject::tr("Legacy DeVault wallet found"),
+        QObject::tr(
+            "A wallet from an older version of DeVault was found. It must be migrated to the new "
+            "wallet format before it can be used.\n\n"
+            "Migrate it now? Your original wallet will be kept, untouched, as \"oldLegacy.dat\", and "
+            "the new wallet will use the same recovery phrase and addresses.\n\n"
+            "You will need your wallet passphrase. You can also do this later from the console with "
+            "the \"migratelegacywallet\" command."),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+    if (answer != QMessageBox::Yes) {
+        return false;
+    }
+    bool ok = false;
+    const QString pass = QInputDialog::getText(
+        parent, QObject::tr("Wallet passphrase"),
+        QObject::tr("Enter the passphrase of your legacy wallet:"), QLineEdit::Password, QString(),
+        &ok);
+    if (!ok || pass.isEmpty()) {
+        return false;
+    }
+    passphraseOut = pass.toStdString();
+    return true;
 }
 #endif // ENABLE_WALLET
 
@@ -795,20 +864,32 @@ int GuiMain(int argc, char *argv[]) {
     // CLI uses. Creating the wallet before sync also lets a freshly restored wallet pick up its
     // history as blocks download. The gate matches WalletInit::Construct's default-wallet check, so a
     // returning user (default wallet already on disk) skips the wizard and that wallet auto-loads.
-    if (!gArgs.GetBoolArg("-disablewallet", false) && !gArgs.IsArgSet("-wallet") &&
-        !fs::exists(GetWalletDir() / "wallet.dat")) {
-        StartOptionsMain wizard(nullptr);
-        wizard.exec();
-        std::string phrase;
-        for (const std::string &word : wizard.getWords()) {
-            phrase += (phrase.empty() ? "" : " ") + word;
+    if (!gArgs.GetBoolArg("-disablewallet", false) && !gArgs.IsArgSet("-wallet")) {
+        const bool walletExists = fs::exists(GetWalletDir() / "wallet.dat");
+        if (walletExists && IsLegacyDeVaultWallet(WalletLocation(std::string()))) {
+            // DeVault [3A.3]: the default wallet.dat is a legacy (pre-V2) wallet that V2 cannot load
+            // directly. Offer to migrate it now; the migration runs in initializeResult once the node
+            // is up. If the user declines, the node boots wallet-less and WalletInit::Construct's
+            // detector prompts them to migrate later from the console.
+            std::string legacyPassphrase;
+            if (AskLegacyMigration(nullptr, legacyPassphrase)) {
+                app.setPendingMigration(legacyPassphrase);
+            }
+        } else if (!walletExists) {
+            StartOptionsMain wizard(nullptr);
+            wizard.exec();
+            std::string phrase;
+            for (const std::string &word : wizard.getWords()) {
+                phrase += (phrase.empty() ? "" : " ") + word;
+            }
+            if (phrase.empty()) {
+                // The user closed the wizard without creating a wallet. Do not silently start a
+                // wallet-less node; exit so the wizard reappears on the next launch (legacy behaviour).
+                return EXIT_SUCCESS;
+            }
+            app.setPendingWalletSetup(phrase, AskOptionalWalletPassphrase(nullptr));
         }
-        if (phrase.empty()) {
-            // The user closed the wizard without creating a wallet. Do not silently start a
-            // wallet-less node; exit so the wizard reappears on the next launch (legacy behaviour).
-            return EXIT_SUCCESS;
-        }
-        app.setPendingWalletSetup(phrase, AskOptionalWalletPassphrase(nullptr));
+        // else: a native default wallet already exists and auto-loads during node init.
     }
 #endif
 
