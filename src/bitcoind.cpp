@@ -146,7 +146,7 @@ static bool AppInit(int argc, char *argv[]) {
             if (!IsSwitchChar(argv[i][0])) {
                 fprintf(stderr,
                         "Error: Command line contains unexpected token '%s', "
-                        "see bitcoind -h for a list of options.\n",
+                        "see devaultd -h for a list of options.\n",
                         argv[i]);
                 return false;
             }
@@ -179,7 +179,7 @@ static bool AppInit(int argc, char *argv[]) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
-            fprintf(stdout, "Bitcoin server starting\n");
+            fprintf(stdout, "DeVault server starting\n");
 
             // Daemonize
             if (daemon(1, 0)) {

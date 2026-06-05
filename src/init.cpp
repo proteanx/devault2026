@@ -990,13 +990,13 @@ void SetupServerArgs() {
 
     gArgs.AddArg(
         "-axionactivationtime=<n>",
-        strprintf("Activation time of the November 2020 Bitcoin Cash Network Upgrade (<n> seconds since epoch, "
+        strprintf("Activation time of the November 2020 Network Upgrade (<n> seconds since epoch, "
                   "default: %d). This option only has an effect on regtest or scalenet.",
                   defaultChainParams->GetConsensus().axionActivationTime),
         ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     gArgs.AddArg(
         "-upgrade9activationheight=<n>",
-        strprintf("Activation height of the May 2023 Bitcoin Cash Network Upgrade; first block using new rules will be"
+        strprintf("Activation height of the May 2023 Network Upgrade; first block using new rules will be"
                   " after this height (default: %d, testnet: %d, testnet4: %d, scalenet: %d, chipnet: %d, regtest: %d)",
                   defaultChainParams->GetConsensus().upgrade9Height,
                   testnetChainParams->GetConsensus().upgrade9Height,
@@ -1007,7 +1007,7 @@ void SetupServerArgs() {
         true, OptionsCategory::DEBUG_TEST);
     gArgs.AddArg(
         "-upgrade10activationheight=<n>",
-        strprintf("Activation height of the May 2024 Bitcoin Cash Network Upgrade; first block using new rules will be"
+        strprintf("Activation height of the May 2024 Network Upgrade; first block using new rules will be"
                   " after this height (default: %d, testnet: %d, testnet4: %d, scalenet: %d, chipnet: %d, regtest: %d)",
                   defaultChainParams->GetConsensus().upgrade10Height,
                   testnetChainParams->GetConsensus().upgrade10Height,
@@ -1018,7 +1018,7 @@ void SetupServerArgs() {
         true, OptionsCategory::DEBUG_TEST);
     gArgs.AddArg(
         "-upgrade11activationheight=<n>",
-        strprintf("Activation height of the May 2025 Bitcoin Cash Network Upgrade; first block using new rules will be"
+        strprintf("Activation height of the May 2025 Network Upgrade; first block using new rules will be"
                   " after this height (default: %d, testnet: %d, testnet4: %d, scalenet: %d, chipnet: %d, regtest: %d)",
                   defaultChainParams->GetConsensus().upgrade11Height,
                   testnetChainParams->GetConsensus().upgrade11Height,
@@ -1029,14 +1029,14 @@ void SetupServerArgs() {
         true, OptionsCategory::DEBUG_TEST);
     gArgs.AddArg(
         "-upgrade12activationtime=<n>",
-        strprintf("Activation time of the May 2026 Bitcoin Cash Network Upgrade (<n> seconds since epoch, "
+        strprintf("Activation time of the May 2026 Network Upgrade (<n> seconds since epoch, "
                   "default: %d, chipnet: %d)",
                   defaultChainParams->GetConsensus().upgrade12ActivationTime,
                   chipnetChainParams->GetConsensus().upgrade12ActivationTime),
         true, OptionsCategory::DEBUG_TEST);
     gArgs.AddArg(
         "-upgrade2027activationtime=<n>",
-        strprintf("Activation time of the tentative May 2027 Bitcoin Cash Network Upgrade (<n> seconds since epoch, "
+        strprintf("Activation time of the tentative May 2027 Network Upgrade (<n> seconds since epoch, "
                   "default: %d, chipnet: %d)",
                   defaultChainParams->GetConsensus().upgrade2027ActivationTime,
                   chipnetChainParams->GetConsensus().upgrade2027ActivationTime),

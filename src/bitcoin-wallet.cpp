@@ -60,7 +60,7 @@ static bool WalletAppInit(int argc, char *argv[]) {
             strprintf("%s bitcoin-wallet version", PACKAGE_NAME) + " " +
                       FormatFullVersion() + "\n\n" +
                       "wallet-tool is an offline tool for creating and interacting with "
-                      "Bitcoin Cash Node wallet files.\n" +
+                      "DeVault wallet files.\n" +
                       "By default wallet-tool will act on wallets in the default mainnet "
                       "wallet directory in the datadir.\n" +
                       "To change the target wallet, use the -datadir, -wallet and "

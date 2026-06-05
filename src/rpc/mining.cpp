@@ -447,13 +447,13 @@ static UniValue getblocktemplatecommon(bool fLight, const Config &config, const 
 
         if (g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0) {
             throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED,
-                               "Bitcoin is not connected!");
+                               "DeVault is not connected!");
         }
     }
 
     if (IsInitialBlockDownload()) {
         throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD,
-                           "Bitcoin is downloading blocks...");
+                           "DeVault is downloading blocks...");
     }
 
     static unsigned int nTransactionsUpdatedLast;

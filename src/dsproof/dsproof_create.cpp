@@ -27,7 +27,7 @@ std::vector<uint8_t> getP2PKHSignature(const CScript &script)
         throw std::runtime_error("scriptSig has no signature");
     const auto hashType = vchRet.back();
     if (!(hashType & SIGHASH_FORKID))
-        throw std::runtime_error("Tx is not a Bitcoin Cash P2PKH transaction");
+        throw std::runtime_error("Tx is not a DeVault P2PKH transaction");
     if (hashType & SIGHASH_UTXOS)
         throw std::runtime_error("SIGHASH_UTXOS is not currently supported by dsproof");
     return vchRet;
@@ -94,7 +94,7 @@ std::vector<uint8_t> DoubleSpendProof::getP2PKHSignature(const CTransaction &tx,
         throw std::runtime_error("scriptSig has no signature");
     const auto hashType = vchRet.back();
     if (!(hashType & SIGHASH_FORKID))
-        throw std::runtime_error("Tx is not a Bitcoin Cash P2PKH transaction");
+        throw std::runtime_error("Tx is not a DeVault P2PKH transaction");
     if (hashType & SIGHASH_UTXOS)
         throw std::runtime_error("SIGHASH_UTXOS is not currently supported by dsproof");
 

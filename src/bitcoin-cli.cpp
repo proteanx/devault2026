@@ -110,7 +110,7 @@ static void SetupCliArgs() {
     gArgs.AddArg(
         "-rpcwallet=<walletname>",
         "Send RPC for non-default wallet on RPC server (needs to exactly match "
-        "corresponding -wallet option passed to bitcoind)",
+        "corresponding -wallet option passed to devaultd)",
         ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 }
 
