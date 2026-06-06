@@ -287,7 +287,15 @@ bool CColdRewards::UpdateWithBlock(const Consensus::Params &consensusParams, con
         }
         const TxId txid = tx->GetId();
         for (size_t n = 0; n < tx->vout.size(); ++n) {
-            const CTxOut &out = tx->vout[n];
+            // Spock-quantize the value (round UP to a 0.001-DVT spock) before the threshold test and
+            // before storing, to match the UTXO set (1F quantizes on AddCoins) and legacy's implicit
+            // Amount copy-quantization. There is NO consensus rule forcing spock-aligned outputs, so a
+            // raw on-disk output value can be sub-spock; without this, such a value could fall the wrong
+            // side of the >=min candidate threshold vs legacy and diverge. This also makes the stored
+            // GetValue() quantized, so CalculateReward/CheckReward/FindReward and the UpdateRewardsDB
+            // drop-check all agree with legacy bit-for-bit.
+            CTxOut out = tx->vout[n];
+            out.nValue = SpockQuantize(out.nValue);
             if (out.nValue >= minRewardBalance) {
                 PutInMap(COutPoint(txid, uint32_t(n)),
                          CRewardValue(out, nHeight, nHeight, nHeight));
