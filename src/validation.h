@@ -650,6 +650,15 @@ public:
 /** Replay blocks that aren't fully applied to the database. */
 bool ReplayBlocks(const Consensus::Params &params, CCoinsView *view);
 
+/**
+ * Reconcile the cold-reward engine (g_coldRewards) to the active-chain tip at startup [3D.3]: no-op
+ * if already in sync, forward-replay a gap if the reward DB lags the chainstate (crash recovery), or
+ * rebuild from genesis if the reward DB is empty/unrelated (first native upgrade / repair). The
+ * structural fix for the legacy cold-reward shutdown desync.
+ */
+bool ReplayColdRewardsToTip(const Consensus::Params &consensusParams)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
 /** Find the last common block between the parameter chain and a locator. */
 CBlockIndex *FindForkInGlobalIndex(const CChain &chain,
                                    const CBlockLocator &locator)

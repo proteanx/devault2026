@@ -1503,8 +1503,8 @@ DisconnectResult ApplyBlockUndo(CBlockUndo &&blockUndo, const CBlock &block, con
     // Cold rewards [3D]: reverse this block's effect on the reward state -- reactivate spent
     // candidates, drop candidates this block created, and rewind a paid reward's clock. Mutations are
     // staged for the atomic flush; the recently-inactive records needed for restoration are still in
-    // the map (pruned only beyond maxreorgdepth).
-    if (g_coldRewards) {
+    // the map (pruned only beyond maxreorgdepth). Skipped during VerifyDB (throw-away view).
+    if (g_coldRewards && !g_coldRewardsSuppress.load()) {
         g_coldRewards->UndoBlock(Params().GetConsensus(), block, pindex->nHeight);
         g_coldRewards->SetBestBlock(block.hashPrevBlock);
     }
@@ -1991,8 +1991,11 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state,
     // block-reward equation still holds. State mutation happens only in the committed section below.
     if (!consensusParams.IsSuperBlock(pindex->nHeight)) {
         if (g_coldRewards) {
+            // During VerifyDB (g_coldRewardsSuppress) take the extract-only path: validating against
+            // the live engine state would be wrong while VerifyDB replays blocks on a throw-away view.
+            const bool fExtractOnly = fJustCheck || g_coldRewardsSuppress.load();
             if (!g_coldRewards->QuickValidate(consensusParams, block, pindex->nHeight, nColdReward,
-                                              fJustCheck)) {
+                                              fExtractOnly)) {
                 return state.DoS(100, error("ConnectBlock(): cold reward invalid at height %d",
                                             pindex->nHeight),
                                  REJECT_INVALID, "bad-cb-coldreward");
@@ -2060,8 +2063,8 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state,
     // Cold rewards [3D]: the block is now committed, so advance the paid candidate's clock (rewardKey
     // was set by QuickValidate->CheckReward) and then track this block's new candidates / spends. These
     // are the ONLY reward-state mutations on the connect path, staged for the atomic flush (3D.3). Only
-    // reached when !fJustCheck (the function returned earlier otherwise).
-    if (g_coldRewards) {
+    // reached when !fJustCheck (the function returned earlier otherwise); skipped during VerifyDB.
+    if (g_coldRewards && !g_coldRewardsSuppress.load()) {
         if (nColdReward > Amount::zero()) {
             g_coldRewards->UpdateRewardsDB(consensusParams, pindex->nHeight);
         }
@@ -2213,6 +2216,17 @@ static bool FlushStateToDisk(const CChainParams &chainparams,
                 }
                 nLastFlush = nNow;
                 full_flush_completed = true;
+
+                // Cold rewards [3D.3]: flush the reward state AFTER the chainstate, tagged with the
+                // chainstate's just-flushed best block. Chainstate-first ordering guarantees the reward
+                // DB is never AHEAD of the chainstate, so an unclean stop leaves at most a forward-
+                // replayable gap (reconciled at startup) -- the structural fix for the cold-reward
+                // shutdown desync. The reward map is at the same tip as pcoinsTip (both advanced under
+                // cs_main in ConnectBlock), so its content matches this best block.
+                if (g_coldRewards &&
+                    !g_coldRewards->Flush(pcoinsTip->GetBestBlock())) {
+                    return AbortNode(state, "Failed to write cold-reward database");
+                }
             }
         }
 
@@ -4827,6 +4841,13 @@ bool CVerifyDB::VerifyDB(const Config &config, CCoinsView *coinsview,
                          int nCheckLevel, int nCheckDepth) {
     LOCK(cs_main);
 
+    // Cold rewards [3D.3]: VerifyDB disconnects/reconnects blocks on a throw-away view; suppress the
+    // engine hooks so the global reward state is left untouched (RAII reset covers every return path).
+    struct ColdRewardsSuppressGuard {
+        ColdRewardsSuppressGuard() { g_coldRewardsSuppress = true; }
+        ~ColdRewardsSuppressGuard() { g_coldRewardsSuppress = false; }
+    } coldRewardsSuppressGuard;
+
     const CChainParams &params = config.GetChainParams();
     const Consensus::Params &consensusParams = params.GetConsensus();
 
@@ -5113,6 +5134,105 @@ bool CChainState::ReplayBlocks(const Consensus::Params &params,
 
 bool ReplayBlocks(const Consensus::Params &params, CCoinsView *view) {
     return g_chainstate.ReplayBlocks(params, view);
+}
+
+//! Replay the cold-reward block hooks for active-chain heights [startHeight, tip] to (re)build the
+//! engine's in-memory state (the caller flushes afterwards). Returns false on a block-read or
+//! reward-validation failure. Part of startup reconciliation [3D.3].
+static bool ReplayColdRewardRange(const Consensus::Params &consensusParams, int startHeight,
+                                  const CBlockIndex *tip) EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
+    for (int h = startHeight; h <= tip->nHeight; ++h) {
+        if (ShutdownRequested()) {
+            return error("ReplayColdRewards: shutdown requested at height %d", h);
+        }
+        const CBlockIndex *pindex = ::ChainActive()[h];
+        if (pindex == nullptr) {
+            return error("ReplayColdRewards: missing active-chain block at height %d", h);
+        }
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pindex, consensusParams)) {
+            return error("ReplayColdRewards: cannot read block %d to rebuild the cold-reward state "
+                         "(pruned node?). Run -reindex-chainstate or resync.",
+                         h);
+        }
+        Amount nColdReward = Amount::zero();
+        if (!consensusParams.IsSuperBlock(h)) {
+            if (!g_coldRewards->QuickValidate(consensusParams, block, h, nColdReward,
+                                              /*fJustCheck=*/false)) {
+                return error("ReplayColdRewards: cold reward invalid at height %d during replay", h);
+            }
+        }
+        if (nColdReward > Amount::zero()) {
+            g_coldRewards->UpdateRewardsDB(consensusParams, h);
+        }
+        g_coldRewards->UpdateWithBlock(consensusParams, block, h);
+        g_coldRewards->SetBestBlock(pindex->GetBlockHash());
+        if ((h % 10000) == 0) {
+            uiInterface.InitMessage(
+                strprintf("Rebuilding cold-reward state (%d / %d)...", h, tip->nHeight));
+            LogPrintf("Cold rewards: replayed reward state to height %d / %d\n", h, tip->nHeight);
+        }
+    }
+    return true;
+}
+
+/**
+ * Reconcile the cold-reward engine state to the active-chain tip at startup [3D.3] -- the structural
+ * fix for the legacy shutdown desync. Three cases:
+ *   - reward DB best block == tip            -> nothing to do (clean shutdown / lockstep flush)
+ *   - reward DB best block is an ancestor    -> forward-replay the gap (crash-between-flushes window)
+ *   - reward DB empty / unrelated / corrupt  -> rebuild from genesis (first native upgrade, or repair)
+ * Because the reward DB is flushed AFTER the chainstate, it is never ahead of the chainstate, so a
+ * forward replay (never a roll-back) always suffices for a crash; the full rebuild covers first run
+ * and repair. ActivateBestChain later advances both the chainstate and the reward engine past the tip.
+ */
+bool ReplayColdRewardsToTip(const Consensus::Params &consensusParams) {
+    if (!g_coldRewards) {
+        return true;
+    }
+    const CBlockIndex *tip = ::ChainActive().Tip();
+    if (tip == nullptr) {
+        return true; // empty chain -- nothing to reconcile
+    }
+
+    const BlockHash rewardBest = g_coldRewards->GetBestBlock();
+    const CBlockIndex *pindexReward =
+        rewardBest.IsNull() ? nullptr : LookupBlockIndex(rewardBest);
+    const bool fOnActiveChain = pindexReward && ::ChainActive().Contains(pindexReward);
+
+    // Already in sync -- the clean-shutdown / lockstep-flush common case.
+    if (fOnActiveChain && pindexReward == tip) {
+        return true;
+    }
+
+    bool ok = false;
+    // Forward-replay the gap if the reward DB is behind on the active chain (the crash-between-
+    // flushes window). On failure, fall through to a full rebuild.
+    if (fOnActiveChain) {
+        LogPrintf("Cold rewards: reward DB at height %d, chainstate at %d -- forward-replaying.\n",
+                  pindexReward->nHeight, tip->nHeight);
+        ok = ReplayColdRewardRange(consensusParams, pindexReward->nHeight + 1, tip);
+        if (!ok) {
+            LogPrintf("Cold rewards: forward replay failed -- rebuilding from genesis.\n");
+        }
+    }
+
+    if (!ok) {
+        // Full rebuild (empty DB on first native upgrade, or an unrelated/corrupt DB).
+        LogPrintf("Cold rewards: rebuilding reward state from genesis to height %d%s.\n",
+                  tip->nHeight, rewardBest.IsNull() ? " (first native run / upgrade)" : "");
+        g_coldRewards->ClearForRebuild();
+        if (!ReplayColdRewardRange(consensusParams, 1, tip)) {
+            return false;
+        }
+    }
+
+    if (!g_coldRewards->Flush(tip->GetBlockHash())) {
+        return false;
+    }
+    LogPrintf("Cold rewards: reward state reconciled to height %d (%d records).\n", tip->nHeight,
+              g_coldRewards->GetStats().records);
+    return true;
 }
 
 // May NOT be used after any connections are up as much of the peer-processing

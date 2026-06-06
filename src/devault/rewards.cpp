@@ -20,6 +20,7 @@
 #include <vector>
 
 std::unique_ptr<CColdRewards> g_coldRewards;
+std::atomic<bool> g_coldRewardsSuppress{false};
 
 namespace {
 //! Superblock after which sub-minimum candidates stop being paid and are purged (legacy constant).
@@ -437,7 +438,7 @@ CColdRewards::Stats CColdRewards::GetStats() const {
     return s;
 }
 
-bool CColdRewards::Flush(const BlockHash &bestBlock) {
+bool CColdRewards::Flush(const BlockHash &bestBlock, bool fSync) {
     std::map<COutPoint, CRewardValue> writes;
     for (const auto &op : setDirty) {
         auto it = rewardMap.find(op);
@@ -446,11 +447,24 @@ bool CColdRewards::Flush(const BlockHash &bestBlock) {
         }
     }
     const std::vector<COutPoint> erases(setErased.begin(), setErased.end());
-    if (!pdb->BatchWrite(writes, erases, bestBlock)) {
+    if (!pdb->BatchWrite(writes, erases, bestBlock, fSync)) {
         return false;
     }
     setDirty.clear();
     setErased.clear();
     hashBestBlock = bestBlock;
     return true;
+}
+
+void CColdRewards::ClearForRebuild() {
+    // Mark every currently-persisted record for deletion so the next flush erases the stale state in
+    // the same atomic batch that writes the rebuilt records (a record re-added during the replay is
+    // moved back out of setErased by PutInMap, so the net effect is a clean replacement).
+    for (const auto &[op, val] : rewardMap) {
+        setErased.insert(op);
+    }
+    setDirty.clear();
+    rewardMap.clear();
+    inactiveByHeight.clear();
+    hashBestBlock = BlockHash();
 }

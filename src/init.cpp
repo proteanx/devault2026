@@ -306,10 +306,16 @@ void Shutdown(NodeContext &node) {
         if (pcoinsTip != nullptr) {
             FlushStateToDisk();
         }
+        // Cold rewards [3D.3]: FlushStateToDisk above wrote the reward state at the tip; force it
+        // durable here so a clean restart is a reconcile no-op (normal flushes are intentionally
+        // unsynced -- see SyncDB).
+        if (g_coldRewards) {
+            g_coldRewards->SyncDB();
+        }
         pcoinsTip.reset();
         pcoinscatcher.reset();
         pcoinsdbview.reset();
-        g_coldRewards.reset(); // cold-reward engine + its DB [3D] (FlushStateToDisk above persists it)
+        g_coldRewards.reset(); // cold-reward engine + its DB [3D]
         pblocktree.reset();
     }
     for (const auto &client : node.chain_clients) {
@@ -2713,6 +2719,16 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
                             gArgs.GetArg("-checkblocks",
                                          DEFAULT_CHECKBLOCKS))) {
                         strLoadError = _("Corrupted block database detected");
+                        break;
+                    }
+
+                    // Cold rewards [3D.3]: reconcile the reward engine to the loaded chain tip --
+                    // no-op if already in sync, forward-replay a crash gap, or rebuild from genesis on
+                    // a first native upgrade. The structural fix for the cold-reward shutdown desync.
+                    if (!ReplayColdRewardsToTip(chainparams.GetConsensus())) {
+                        strLoadError =
+                            _("Unable to reconcile the cold-reward database. Run "
+                              "-reindex-chainstate.");
                         break;
                     }
                 }

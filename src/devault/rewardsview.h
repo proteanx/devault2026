@@ -63,9 +63,12 @@ public:
     }
 
     //! Atomically write a set of record changes + the best block in ONE batch. This is the only path
-    //! that advances the DB's best block, so the DB and its best block can never disagree.
+    //! that advances the DB's best block, so the DB and its best block can never disagree. fSync forces
+    //! the write durable (used only at clean shutdown -- the bestBlock write makes the batch non-empty
+    //! so LevelDB actually flushes its log buffer, unlike an empty Sync()).
     bool BatchWrite(const std::map<COutPoint, CRewardValue> &writes,
-                    const std::vector<COutPoint> &erases, const BlockHash &bestBlock);
+                    const std::vector<COutPoint> &erases, const BlockHash &bestBlock,
+                    bool fSync = false);
 
     //! The block hash the DB contents correspond to (null if never written).
     BlockHash GetBestBlock() const;

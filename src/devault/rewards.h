@@ -13,6 +13,7 @@
 #include <primitives/blockhash.h>
 #include <sync.h>
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -79,7 +80,16 @@ public:
 
     // -- Persistence (3D.3) --
     //! Stage the dirty records + bestBlock into the DB in one atomic batch; clears the dirty sets.
-    bool Flush(const BlockHash &bestBlock) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    //! fSync forces the write durable (clean shutdown only).
+    bool Flush(const BlockHash &bestBlock, bool fSync = false) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    //! Drop the in-memory state (marking existing records for deletion in the next flush) so the
+    //! caller can rebuild from genesis. Used by startup reconciliation when the DB is empty/unrelated.
+    void ClearForRebuild() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    //! Force the backing DB durable. Called once at clean shutdown (after the final flush) so the
+    //! reward DB persists exactly at the tip and a normal restart is a reconcile no-op. NOT used per
+    //! flush: normal flushes stay unsynced so an unclean stop leaves the reward DB at-or-behind the
+    //! chainstate (a forward-replayable gap), never ahead.
+    void SyncDB() EXCLUSIVE_LOCKS_REQUIRED(cs_main) { Flush(hashBestBlock, /*fSync=*/true); }
     void SetBestBlock(const BlockHash &h) EXCLUSIVE_LOCKS_REQUIRED(cs_main) { hashBestBlock = h; }
     BlockHash GetBestBlock() const EXCLUSIVE_LOCKS_REQUIRED(cs_main) { return hashBestBlock; }
 
@@ -122,5 +132,11 @@ private:
 //! Global engine instance (constructed in init.cpp once the chainstate is open). Null if cold rewards
 //! are not active for this run (e.g. the wallet tool).
 extern std::unique_ptr<CColdRewards> g_coldRewards;
+
+//! When true, the Connect/DisconnectBlock cold-reward hooks DO NOT mutate the engine and QuickValidate
+//! only extracts (no CheckReward, no purge). Set during CVerifyDB::VerifyDB, which disconnects/reconnects
+//! blocks on a THROW-AWAY coins view -- those calls must not touch the global reward state (otherwise
+//! the runtime `verifychain` RPC would silently corrupt it, with no startup reconciliation to repair it).
+extern std::atomic<bool> g_coldRewardsSuppress;
 
 #endif // DEVAULT_DEVAULT_REWARDS_H

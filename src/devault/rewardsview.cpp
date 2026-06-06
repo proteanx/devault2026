@@ -14,7 +14,8 @@ CRewardsViewDB::CRewardsViewDB(const fs::path &path, size_t nCacheSize, bool fMe
     : db(path, nCacheSize, fMemory, fWipe, /*obfuscate=*/true) {}
 
 bool CRewardsViewDB::BatchWrite(const std::map<COutPoint, CRewardValue> &writes,
-                                const std::vector<COutPoint> &erases, const BlockHash &bestBlock) {
+                                const std::vector<COutPoint> &erases, const BlockHash &bestBlock,
+                                bool fSync) {
     CDBBatch batch(db);
     for (const auto &[outpoint, value] : writes) {
         batch.Write(KeyType(DB_REWARD, outpoint), value);
@@ -28,7 +29,7 @@ bool CRewardsViewDB::BatchWrite(const std::map<COutPoint, CRewardValue> &writes,
     if (!bestBlock.IsNull()) {
         batch.Write(DB_REWARD_BESTBLOCK, bestBlock);
     }
-    return db.WriteBatch(batch, /*fSync=*/false);
+    return db.WriteBatch(batch, fSync);
 }
 
 BlockHash CRewardsViewDB::GetBestBlock() const {
