@@ -30,11 +30,10 @@
 SplashScreen::SplashScreen(interfaces::Node &node,
                            const NetworkStyle *networkStyle)
     : QWidget(nullptr), curAlignment(0), m_node(node) {
-    // set reference point, paddings
-    int paddingRight = 20;
-    int paddingTop = 50;
-    int titleVersionVSpace = 17;
-    int titleCopyrightVSpace = 40;
+    // DeVault splash: the full "Terraform" art is the background, with title/version/copyright text
+    // centered near the bottom (matching the legacy DeVault splash layout).
+    int paddingTop = int(720 * 0.85);
+    int vSpace = 10;
 
     float fontFactor = 1.0;
     float devicePixelRatio = 1.0;
@@ -50,8 +49,8 @@ SplashScreen::SplashScreen(interfaces::Node &node,
 
     QString font = QApplication::font().toString();
 
-    // create a bitmap according to device pixelratio
-    QSize splashSize(480 * devicePixelRatio, 320 * devicePixelRatio);
+    // create a bitmap according to device pixelratio (DeVault splash size: 1440x720)
+    QSize splashSize(1440 * devicePixelRatio, 720 * devicePixelRatio);
     pixmap = QPixmap(splashSize);
 
 #if QT_VERSION > 0x050100
@@ -62,63 +61,44 @@ SplashScreen::SplashScreen(interfaces::Node &node,
     QPainter pixPaint(&pixmap);
     pixPaint.setPen(QColor(0xD9, 0xD9, 0xD9));
 
-    // draw a linear gradient
-    QLinearGradient gradient(QPoint(0, 0), QPoint(0, splashSize.height() / devicePixelRatio));
-    gradient.setColorAt(0, QColor(0x09, 0x09, 0x09));
-    gradient.setColorAt(1, QColor(0x2A, 0x2A, 0x2A));
-    QRect rGradient(QPoint(0, 0), splashSize);
-    pixPaint.fillRect(rGradient, gradient);
+    // draw the DeVault splash art as the full background
+    QPixmap header(":/icons/terraform");
+    pixPaint.drawPixmap(QRect(QPoint(0, 0), QSize(1440, 720)), header);
 
-    // draw the bitcoin icon, expected size of PNG: 1024x1273
-    QRect rectIcon(QPoint(20, 10), QSize(184, 229));
-
-    const QSize requiredSize(184, 229);
-    QPixmap icon(networkStyle->getSplashIcon().pixmap(requiredSize));
-
-    pixPaint.drawPixmap(rectIcon, icon);
-
-    // check font size and drawing with
-    pixPaint.setFont(QFont(font, 30 * fontFactor));
+    // title, centered near the bottom
+    pixPaint.setFont(QFont(font, 28 * fontFactor));
     QFontMetrics fm = pixPaint.fontMetrics();
     int titleTextWidth = GUIUtil::TextWidth(fm, titleText);
-    if (titleTextWidth > 220) {
-        fontFactor = fontFactor * 220 / titleTextWidth;
+    if (titleTextWidth > 480) {
+        fontFactor = fontFactor * 480 / titleTextWidth;
     }
-
-    pixPaint.setFont(QFont(font, 30 * fontFactor));
+    pixPaint.setFont(QFont(font, 24 * fontFactor));
     fm = pixPaint.fontMetrics();
     titleTextWidth = GUIUtil::TextWidth(fm, titleText);
-    pixPaint.drawText(pixmap.width() / devicePixelRatio - titleTextWidth - paddingRight, paddingTop, titleText);
+    pixPaint.drawText(pixmap.width() / 2 / devicePixelRatio - titleTextWidth / 2, paddingTop, titleText);
 
+    // version, centered below the title
     pixPaint.setFont(QFont(font, 15 * fontFactor));
-
-    // if the version string is too long, reduce size
     fm = pixPaint.fontMetrics();
-    int versionTextWidth = GUIUtil::TextWidth(fm, titleText);
-    if (versionTextWidth > titleTextWidth + paddingRight - 10) {
-        pixPaint.setFont(QFont(font, 10 * fontFactor));
-        titleVersionVSpace -= 5;
-    }
-    pixPaint.drawText(pixmap.width() / devicePixelRatio - titleTextWidth - paddingRight + 2,
-                      paddingTop + titleVersionVSpace, versionText);
+    const int textHeight = fm.height();
+    const int versionTextWidth = GUIUtil::TextWidth(fm, versionText);
+    pixPaint.drawText(pixmap.width() / 2 / devicePixelRatio - versionTextWidth / 2,
+                      paddingTop + textHeight + vSpace, versionText);
 
-    // draw copyright stuff
-    {
-        pixPaint.setFont(QFont(font, 10 * fontFactor));
-        const int x = pixmap.width() / devicePixelRatio - titleTextWidth - paddingRight;
-        const int y = paddingTop + titleCopyrightVSpace;
-        QRect copyrightRect(x, y, pixmap.width() - x - paddingRight, pixmap.height() - y);
-        pixPaint.drawText(copyrightRect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, copyrightText);
-    }
+    // copyright, centered below the version
+    pixPaint.setFont(QFont(font, 10 * fontFactor));
+    fm = pixPaint.fontMetrics();
+    const int copyrightTextWidth = GUIUtil::TextWidth(fm, copyrightText);
+    pixPaint.drawText(pixmap.width() / 2 / devicePixelRatio - copyrightTextWidth / 2,
+                      paddingTop + 2 * (textHeight + vSpace), copyrightText);
 
-    // draw additional text if special network
+    // draw additional text if special network (e.g. [testnet]) next to the title
     if (!titleAddText.isEmpty()) {
         QFont boldFont = QFont(font, 10 * fontFactor);
         boldFont.setWeight(QFont::Bold);
         pixPaint.setFont(boldFont);
-        fm = pixPaint.fontMetrics();
-        int titleAddTextWidth = GUIUtil::TextWidth(fm, titleAddText);
-        pixPaint.drawText(pixmap.width() / devicePixelRatio - titleAddTextWidth - 10, 15, titleAddText);
+        pixPaint.drawText(pixmap.width() / 2 / devicePixelRatio + titleTextWidth / 2 + 10, paddingTop,
+                          titleAddText);
     }
 
     pixPaint.end();
