@@ -1263,11 +1263,32 @@ int GetSpendHeight(const CCoinsViewCache &inputs) {
 // Spends of these are spock's unfinished mining-pool BLS experiment -- a handful of tiny test
 // transactions (first at height 344881) that used a non-standard BLS aggregate scriptSig. V2 does
 // not carry the RELIC pairing library and does not emulate the BLS script VM; for re-validating
-// the canonical chain it recognizes such inputs and accepts their script as-is (see CheckInputs).
-// POST-FORK these spends MUST be rejected (frozen); see DEVAULT_BLS_HANDLING.md.
+// the canonical chain it recognizes such inputs and accepts their script as-is (see CheckInputs),
+// EXCEPT it now FREEZES them going forward (see IsGrandfatheredBlsSpend + the CheckInputs freeze).
 static bool IsBlsKeyHashScript(const CScript &s) {
     return s.size() == 25 && s[0] == OP_DUP && s[1] == OP_BLSKEYHASH &&
            s[2] == 0x14 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG;
+}
+
+// DeVault [BLS freeze, 3E]: the only two transactions that ever spent a blskeyhash output in the
+// canonical chain (heights 344881, 344882 -- spock's mining-pool experiment). They are whitelisted so
+// re-validating / reindexing the chain replays them byte-identically; EVERY other blskeyhash spend is
+// frozen (rejected) in CheckInputs, making the remaining blskeyhash UTXOs permanently unspendable
+// (without the RELIC pairing they would otherwise be anyone-can-spend). No activation height is needed:
+// a txid is unique so this can never match a future transaction, and the remaining blskeyhash UTXOs are
+// unspent throughout history, so the freeze never fires on a historical block. Affected holders (spock's
+// lost coins) are compensated from the superblock budget. See DEVAULT_BLS_HANDLING.md §4.
+static bool IsGrandfatheredBlsSpend(const TxId &txid) {
+    static const TxId kHistoricalBlsSpends[] = {
+        TxId(uint256S("83a9f90fd0261884822192be7824987e5d4fc2a283c164fdd0aaa4556ad2757e")), // h=344881
+        TxId(uint256S("83cb86d4a15a7eee085faf0b1d04aca8daf56fa63c245ba31c8d85f9172a0192")), // h=344882
+    };
+    for (const auto &id : kHistoricalBlsSpends) {
+        if (txid == id) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool CheckInputs(const CTransaction &tx, CValidationState &state,
@@ -1315,15 +1336,21 @@ bool CheckInputs(const CTransaction &tx, CValidationState &state,
     for (size_t i = 0; i < tx.vin.size(); ++i) {
         assert(!contextVec[i].coin().IsSpent());
 
-        // DeVault legacy [BLS]: accept (do NOT script-verify) an input that spends a historical
-        // blskeyhash output. V2 has no RELIC BLS pairing and does not emulate the non-standard BLS
-        // aggregate VM; re-validating the canonical chain, we trust the (already-valid) script.
-        // Bounded to post-blsActivationTime (SCRIPT_ENABLE_BLS) and the exact blskeyhash pattern.
-        // The block's other inputs are still fully verified. POST-FORK these spends MUST be
-        // rejected (frozen) so the UTXOs are unspendable -- see DEVAULT_BLS_HANDLING.md.
+        // DeVault [BLS]: an input that spends a historical blskeyhash output. V2 has no RELIC BLS
+        // pairing and does not emulate the non-standard BLS aggregate VM. Bounded to post-
+        // blsActivationTime (SCRIPT_ENABLE_BLS) and the exact blskeyhash pattern.
         if ((flags & SCRIPT_ENABLE_BLS) &&
             IsBlsKeyHashScript(contextVec[i].coin().GetTxOut().scriptPubKey)) {
-            continue;
+            // FREEZE (3E, DEVAULT_BLS_HANDLING.md §4): these UTXOs are unspendable in V2. Without the
+            // pairing, "accept the BLS signature structurally" would make every remaining blskeyhash
+            // UTXO anyone-can-spend, so we REJECT the spend. The only exceptions are the two historical
+            // spends already in the canonical chain (whitelisted by txid) -- accepted as-is so reindex /
+            // re-validation replays history byte-identically. The block's other inputs are still fully
+            // verified above/below this branch.
+            if (!IsGrandfatheredBlsSpend(tx.GetId())) {
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-blskeyhash-frozen");
+            }
+            continue; // grandfathered historical spend: accept the script as-is (no pairing verify)
         }
 
         if ( ! txdata.populated) {

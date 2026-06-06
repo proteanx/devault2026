@@ -85,7 +85,14 @@ CTxOut CColdRewards::GetPayment(const CRewardValue &coinreward, Amount reward) c
 
 // Determine which coin gets the reward and how much (ported from legacy FindReward). READ-ONLY: unlike
 // legacy this performs no DB erases — low-reward candidates are merely skipped here (the actual purge
-// is a one-time staged mutation in QuickValidate at height 131491).
+// is a one-time staged mutation in QuickValidate at height 131491). Now LIVE in block production (3D.7).
+//
+// POST-FORK NOTE (3D.8, review item): the final tie-break (same height + same reward -> smallest key)
+// orders by COutPoint::operator< (txid, then n as a fixed uint32). Legacy ordered its reward map by a
+// key whose n was a VARINT, so the two orders diverge ONLY for a tie among outputs n>=128 of a single
+// tx — which never occurred on the historical chain (M6 replayed to the tip with zero divergence). It
+// does not need replicating: V2's FindReward (mining) and CheckReward (validation) use the SAME COutPoint
+// order so V2 is self-consistent across nodes, and the lenient CheckReward accepts the payout regardless.
 bool CColdRewards::FindReward(const Consensus::Params &consensusParams, int Height,
                              CTxOut &rewardPayment) {
     CRewardValue sel_reward;
@@ -152,6 +159,15 @@ bool CColdRewards::FindReward(const Consensus::Params &consensusParams, int Heig
 // legacy CheckReward — the lenient connect-path check). The address compare is a direct scriptPubKey
 // equality: legacy round-tripped through GetDestFromTxOut/GetScriptForDestination, which is the identity
 // for the standard P2PKH/P2SH scripts every historical reward was paid to. READ-ONLY.
+//
+// POST-FORK POLICY (3D.8): this check is intentionally LENIENT — it accepts the payout if it matches
+// ANY eligible candidate at the address, not necessarily the canonical (oldest) FindReward selection.
+// Legacy DeVault (spock) switched from a stricter rule to lenient in an attempt to paper over the
+// cold-reward shutdown desync; V2 fixes that desync at its root (3D.3 lockstep flush + startup
+// reconciliation), so the original reason for leniency is gone. A future hard fork MAY tighten this to
+// STRICT (require the exact FindReward outpoint + amount), which would also make block production fully
+// determined. It is kept LENIENT now because pre-fork blocks MUST validate byte-identically to legacy
+// (M6 parity). See DEVAULT_COLD_REWARDS_DESIGN.md §"Post-fork policy". Gate any change at the fork height.
 bool CColdRewards::CheckReward(const Consensus::Params &consensusParams, int Height,
                              const CTxOut &rewardPayment) {
     const CScript &script_ref = rewardPayment.scriptPubKey;
@@ -389,6 +405,15 @@ bool CColdRewards::UndoBlock(const Consensus::Params &consensusParams, const CBl
     return true;
 }
 
+// Undo a paid reward on disconnect: rewind the paid candidate's clock back to its prior height.
+//
+// POST-FORK NOTE (3D.8, review item): legacy restores the FIRST map entry with GetHeight()==Height. If a
+// disconnected block both PAID a reward AND created new >=min candidates, those created candidates also
+// carry Height==Height, so legacy can rewind the wrong record. V2 reproduces legacy EXACTLY (review
+// confirmed the identical record via txid memcmp) — this is required for pre-fork reorg parity, because
+// which clock rewinds changes later CheckReward amounts and so could diverge the chain. A future hard
+// fork should prefer the actually-paid record (GetHeight()==Height && GetOldHeight()!=Height; a freshly
+// created candidate has OldHeight==Height). Gate that at the fork height. See DEVAULT_COLD_REWARDS_DESIGN.md.
 bool CColdRewards::RestoreRewardAtHeight(int Height) {
     for (auto &[key, val] : rewardMap) {
         if (val.GetHeight() == uint32_t(Height)) {

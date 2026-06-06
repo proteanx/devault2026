@@ -16,6 +16,8 @@
 #include <consensus/merkle.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <devault/budget.h>
+#include <devault/rewards.h>
 #include <hash.h>
 #include <net.h>
 #include <policy/policy.h>
@@ -209,11 +211,22 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn, double timeLimitSe
     coinbaseTx.vin[0].prevout = COutPoint();
     coinbaseTx.vout.resize(1);
     coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
-    coinbaseTx.vout[0].nValue = nFees + GetBlockSubsidy(nHeight, consensusParams);
+    const Amount nBlockSubsidy = GetBlockSubsidy(nHeight, consensusParams);
+    coinbaseTx.vout[0].nValue = nFees + nBlockSubsidy;
     // DeVault encodes the BIP34 coinbase height with CScriptNum::serialize (always a
     // data push) and enforces BIP34 from height 1; build the coinbase to match what
     // ContextualCheckBlock expects (differs from BCHN's ScriptInt only for heights 1..16).
     coinbaseTx.vin[0].scriptSig = CScript() << CScriptNum::serialize(nHeight) << OP_0;
+
+    // DeVault [1H/3D.7]: a superblock pays the hardcoded budget; otherwise a non-superblock may pay a
+    // cold reward to the oldest eligible large UTXO. Mutually exclusive, matching legacy DeVault's
+    // miner and the ConnectBlock validation (budget on superblocks, cold reward on non-superblocks).
+    // FindReward is read-only on the engine; the paid candidate's clock advances later, in ConnectBlock.
+    if (!FillSuperBlockBudget(coinbaseTx, nHeight, nBlockSubsidy, chainparams)) {
+        if (g_coldRewards) {
+            g_coldRewards->FillPayments(consensusParams, coinbaseTx, nHeight);
+        }
+    }
 
     if (const uint64_t minTxSize = GetMinimumTxSize(consensusParams, pindexPrev)) {
         const uint64_t coinbaseSize = ::GetSerializeSize(coinbaseTx, PROTOCOL_VERSION);

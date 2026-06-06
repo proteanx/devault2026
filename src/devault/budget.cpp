@@ -14,6 +14,7 @@
 
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -72,18 +73,22 @@ int getPayoutIndexFromHeight(int SuperBlockNumber) {
 
 } // namespace
 
-bool CheckSuperBlockBudget(const CBlock &block, int nHeight, const Amount &nBlockSubsidy,
-                           const CChainParams &chainparams, Amount &nBudgetReward) {
+// Compute the (script, amount) budget payouts for a superblock at nHeight; empty if nHeight is NOT a
+// superblock. The single source of truth shared by CheckSuperBlockBudget (validate) and
+// FillSuperBlockBudget (mine), so the two can never disagree. CalculateSuperBlockRewards ported
+// verbatim: DeVault's `.toInt()` is BCHN's `/ SATOSHI`; trailing `* COIN` converts the integer coin
+// amount back to an Amount.
+namespace {
+std::vector<std::pair<CScript, Amount>>
+ComputeSuperBlockPayments(int nHeight, const Amount &nBlockSubsidy, const CChainParams &chainparams) {
+    std::vector<std::pair<CScript, Amount>> payments;
     const Consensus::Params &consensus = chainparams.GetConsensus();
     if (!consensus.IsSuperBlock(nHeight)) {
-        nBudgetReward = Amount::zero();
-        return true;
+        return payments;
     }
-
     const int64_t nBlocksPerPeriod = consensus.nBlocksPerYear / 12;
     const bool fTestNet = (chainparams.NetworkIDString() != "main");
     const int Index = getPayoutIndexFromHeight(int(nHeight / nBlocksPerPeriod));
-    const int BudgetSize = int(Payouts[Index].budget.size());
 
     // Sum of the %s -> scale factor (DeVault budget is a fraction of the miner's portion).
     int PerCentSum = 0;
@@ -92,32 +97,41 @@ bool CheckSuperBlockBudget(const CBlock &block, int nHeight, const Amount &nBloc
     }
     const int ScaleFactor = (100 - PerCentSum);
 
-    // Compute the expected budget scripts + payments (CalculateSuperBlockRewards, ported verbatim;
-    // DeVault's `.toInt()` is BCHN's `/ SATOSHI`, both the raw satoshi int64; trailing `* COIN`
-    // converts the integer coin amount back to an Amount).
-    std::vector<CScript> Scripts(BudgetSize);
-    std::vector<Amount> nPayment(BudgetSize);
+    for (const auto &b : Payouts[Index].budget) {
+        const std::string &addr = fTestNet ? b.TestNetAddress : b.MainNetAddress;
+        CScript script = GetScriptForDestination(DecodeDestination(addr, chainparams));
+        Amount payment =
+            (((b.percent * nBlocksPerPeriod * (nBlockSubsidy / SATOSHI)) / (ScaleFactor * (COIN / SATOSHI))) *
+             COIN);
+        payments.emplace_back(std::move(script), payment);
+    }
+    return payments;
+}
+} // namespace
+
+bool CheckSuperBlockBudget(const CBlock &block, int nHeight, const Amount &nBlockSubsidy,
+                           const CChainParams &chainparams, Amount &nBudgetReward) {
+    const auto payments = ComputeSuperBlockPayments(nHeight, nBlockSubsidy, chainparams);
+    if (payments.empty()) { // not a superblock
+        nBudgetReward = Amount::zero();
+        return true;
+    }
+
     Amount refRewards = Amount::zero();
-    for (int i = 0; i < BudgetSize; i++) {
-        const std::string &addr = fTestNet ? Payouts[Index].budget[i].TestNetAddress
-                                           : Payouts[Index].budget[i].MainNetAddress;
-        Scripts[i] = GetScriptForDestination(DecodeDestination(addr, chainparams));
-        nPayment[i] = (((Payouts[Index].budget[i].percent * nBlocksPerPeriod * (nBlockSubsidy / SATOSHI)) /
-                        (ScaleFactor * (COIN / SATOSHI))) *
-                       COIN);
-        refRewards += nPayment[i];
+    for (const auto &[script, payment] : payments) {
+        refRewards += payment;
     }
 
     // Verify the coinbase pays each budget address exactly its expected amount (CBudget::Validate).
     bool fPaymentOK = true;
     Amount nSumReward = Amount::zero();
     for (const auto &out : block.vtx[0]->vout) {
-        for (int i = 0; i < BudgetSize; i++) {
-            if (out.scriptPubKey == Scripts[i]) {
-                if (out.nValue != nPayment[i]) {
+        for (const auto &[script, payment] : payments) {
+            if (out.scriptPubKey == script) {
+                if (out.nValue != payment) {
                     fPaymentOK = false;
                 } else {
-                    nSumReward += nPayment[i];
+                    nSumReward += payment;
                 }
             }
         }
@@ -127,4 +141,16 @@ bool CheckSuperBlockBudget(const CBlock &block, int nHeight, const Amount &nBloc
     }
     nBudgetReward = nSumReward;
     return fPaymentOK;
+}
+
+bool FillSuperBlockBudget(CMutableTransaction &txNew, int nHeight, const Amount &nBlockSubsidy,
+                          const CChainParams &chainparams) {
+    const auto payments = ComputeSuperBlockPayments(nHeight, nBlockSubsidy, chainparams);
+    if (payments.empty()) {
+        return false; // not a superblock -> caller may add a cold reward instead
+    }
+    for (const auto &[script, payment] : payments) {
+        txNew.vout.emplace_back(payment, script);
+    }
+    return true;
 }

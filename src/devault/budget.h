@@ -10,6 +10,7 @@
 
 class CBlock;
 class CChainParams;
+class CMutableTransaction;
 
 /**
  * DeVault budget (ported from legacy DeVault devault/budget.cpp).
@@ -26,5 +27,13 @@ class CChainParams;
  */
 bool CheckSuperBlockBudget(const CBlock &block, int nHeight, const Amount &nBlockSubsidy,
                            const CChainParams &chainparams, Amount &nBudgetReward);
+
+/**
+ * Mining counterpart of CheckSuperBlockBudget: if nHeight is a superblock, append the budget payout
+ * outputs to the coinbase txNew and return true; otherwise leave txNew untouched and return false (the
+ * caller may then add a cold reward). Uses the same payout computation as the validator.
+ */
+bool FillSuperBlockBudget(CMutableTransaction &txNew, int nHeight, const Amount &nBlockSubsidy,
+                          const CChainParams &chainparams);
 
 #endif // DEVAULT_DEVAULT_BUDGET_H

@@ -1029,10 +1029,15 @@ public:
         consensus.nInitialMiningRewardInCoins = 500;
         consensus.minerCapSystemChangeHeight = 0;
         consensus.nPerCentPerYear = {15, 12, 9, 7, 5};
-        consensus.nMinRewardBlocks = consensus.nBlocksPerYear / 12;
+        // Regtest testability: lower the cold-reward eligibility window + minimum payout so functional
+        // tests can exercise the engine and cold-reward mining without the ~21915-block (monthly) wait
+        // that mainnet/testnet use. IsSuperBlock still keys off nBlocksPerYear/12, so superblocks stay
+        // at 21915 — out of the way of short cold-reward tests. (Mainnet keeps nBlocksPerYear/12 and
+        // 50*COIN; see the mainnet param block above.) The reward math (CalculateReward) is unchanged.
+        consensus.nMinRewardBlocks = 144;
         consensus.vecMinRewardBalances = {
             std::tuple<int64_t, Amount>(2147483647 /* INT32_MAX */, 1000 * COIN)};
-        consensus.nMinReward = 50 * COIN;
+        consensus.nMinReward = COIN;
         consensus.nZawyLwmaAveragingWindow = 72;
 
         // UAHF is always enabled on regtest.
