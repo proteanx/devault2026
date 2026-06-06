@@ -19,6 +19,8 @@
 #include <compat/sanity.h>
 #include <config.h>
 #include <consensus/activation.h>
+#include <devault/rewards.h>
+#include <devault/rewardsview.h>
 #include <dsproof/dsproof.h>
 #include <dsproof/storage.h>
 #include <extversion.h>
@@ -307,6 +309,7 @@ void Shutdown(NodeContext &node) {
         pcoinsTip.reset();
         pcoinscatcher.reset();
         pcoinsdbview.reset();
+        g_coldRewards.reset(); // cold-reward engine + its DB [3D] (FlushStateToDisk above persists it)
         pblocktree.reset();
     }
     for (const auto &client : node.chain_clients) {
@@ -2651,6 +2654,24 @@ bool AppInitMain(Config &config, RPCServer &rpcServer,
 
                 // The on-disk coinsdb is now in a good state, create the cache
                 pcoinsTip.reset(new CCoinsViewCache(pcoinscatcher.get()));
+
+                // Cold rewards [3D]: open the reward DB (a chainstate projection at
+                // <datadir>/coldrewards) and load its state into memory. Wiped alongside the chainstate
+                // on -reindex/-reindex-chainstate so it is rebuilt by the block replay. (3D.3 reconciles
+                // it to the chain tip; here Load just reads whatever the DB currently holds.)
+                {
+                    // Close any handle from a prior load attempt before reopening (LevelDB holds an
+                    // exclusive dir lock; this retry-loop may run more than once).
+                    g_coldRewards.reset();
+                    const bool fWipeRewards = fReset || fReindexChainState;
+                    auto rewardsDB = std::make_unique<CRewardsViewDB>(
+                        GetDataDir() / "coldrewards", 8 << 20, false, fWipeRewards);
+                    g_coldRewards = std::make_unique<CColdRewards>(
+                        chainparams.GetConsensus(), std::move(rewardsDB),
+                        chainparams.NetworkIDString() == CBaseChainParams::MAIN);
+                    BlockHash rewardsBestBlock;
+                    g_coldRewards->Load(rewardsBestBlock);
+                }
 
                 bool is_coinsview_empty = fReset || fReindexChainState ||
                                           pcoinsTip->GetBestBlock().IsNull();

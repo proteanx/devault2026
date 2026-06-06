@@ -33,9 +33,9 @@ std::string CRewardValue::ToString() const {
                      inactiveHeight, HexStr(txout.scriptPubKey));
 }
 
-CColdRewards::CColdRewards(const Consensus::Params &consensusParams, CRewardsViewDB *prdb,
-                           bool fMainNetIn)
-    : pdb(prdb), fMainNet(fMainNetIn) {
+CColdRewards::CColdRewards(const Consensus::Params &consensusParams,
+                           std::unique_ptr<CRewardsViewDB> prdb, bool fMainNetIn)
+    : pdb(std::move(prdb)), fMainNet(fMainNetIn) {
     Setup(consensusParams);
 }
 
@@ -424,6 +424,18 @@ void CColdRewards::ClearLowRewards(const Amount minRewardBalance) {
 }
 
 // -- Persistence --
+
+CColdRewards::Stats CColdRewards::GetStats() const {
+    Stats s;
+    s.records = int64_t(rewardMap.size());
+    for (const auto &[op, val] : rewardMap) {
+        if (val.IsActive()) {
+            ++s.active;
+        }
+    }
+    s.bestBlock = hashBestBlock;
+    return s;
+}
 
 bool CColdRewards::Flush(const BlockHash &bestBlock) {
     std::map<COutPoint, CRewardValue> writes;

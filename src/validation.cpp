@@ -21,6 +21,7 @@
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
 #include <devault/budget.h>
+#include <devault/rewards.h>
 #include <dsproof/dsproof.h>
 #include <dsproof/storage.h>
 #include <flatfile.h>
@@ -1499,6 +1500,15 @@ DisconnectResult ApplyBlockUndo(CBlockUndo &&blockUndo, const CBlock &block, con
         }
     }
 
+    // Cold rewards [3D]: reverse this block's effect on the reward state -- reactivate spent
+    // candidates, drop candidates this block created, and rewind a paid reward's clock. Mutations are
+    // staged for the atomic flush; the recently-inactive records needed for restoration are still in
+    // the map (pruned only beyond maxreorgdepth).
+    if (g_coldRewards) {
+        g_coldRewards->UndoBlock(Params().GetConsensus(), block, pindex->nHeight);
+        g_coldRewards->SetBestBlock(block.hashPrevBlock);
+    }
+
     // Move best block pointer to previous block.
     view.SetBestBlock(block.hashPrevBlock);
 
@@ -1972,19 +1982,24 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state,
                          REJECT_INVALID, "bad-cb-amount");
     }
 
-    // Cold rewards [1I, Option B -- lenient extract; see DEVAULT_COLD_REWARDS_DESIGN.md].
-    // On a non-superblock, the coinbase MAY pay a cold reward at vout[1] (the reward goes to a
-    // long-held large UTXO's own scriptPubKey). We add that output's value to the allowed coinbase
-    // total without re-validating it against a reward DB -- this is byte-identical to the legacy
-    // QuickValidate(fJustCheck=true) path (devault validation.cpp:1948). It is safe and
-    // consensus-equivalent for RE-VALIDATING THE EXISTING CHAIN: every historical cold reward
-    // already passed legacy CheckReward, and the extract never rejects a valid one. Before height
-    // 22377 legacy CheckReward rejected any size>1 coinbase, so accepted blocks there have size==1
-    // (extract == 0); at/after 22377 vout[1] is exactly what legacy extracts. The stateful engine
-    // that validates/produces NEW (post-fork) blocks -- and that fixes the cold-reward shutdown
-    // bug via a chainstate-derived, rebuildable design -- is deferred to the block-production phase.
-    if (!consensusParams.IsSuperBlock(pindex->nHeight) && block.vtx[0]->vout.size() > 1) {
-        nColdReward = block.vtx[0]->vout[1].nValue;
+    // Cold rewards [3D, stateful engine; see DEVAULT_COLD_REWARDS_DESIGN.md]. On a non-superblock the
+    // coinbase MAY pay a cold reward at vout[1] (to a long-held large UTXO's own scriptPubKey). The
+    // engine validates it against its in-memory reward state (the lenient CheckReward -- matches every
+    // historical block) and extracts its value into the allowed coinbase total. fJustCheck (mining /
+    // TestBlockValidity) takes the extract-only path; a real connect validates. If the engine is not
+    // constructed (degenerate startup window), fall back to the Phase-1 Option-B extract so the
+    // block-reward equation still holds. State mutation happens only in the committed section below.
+    if (!consensusParams.IsSuperBlock(pindex->nHeight)) {
+        if (g_coldRewards) {
+            if (!g_coldRewards->QuickValidate(consensusParams, block, pindex->nHeight, nColdReward,
+                                              fJustCheck)) {
+                return state.DoS(100, error("ConnectBlock(): cold reward invalid at height %d",
+                                            pindex->nHeight),
+                                 REJECT_INVALID, "bad-cb-coldreward");
+            }
+        } else if (block.vtx[0]->vout.size() > 1) {
+            nColdReward = block.vtx[0]->vout[1].nValue;
+        }
     }
 
     const Amount blockReward = nFees + nBlockSubsidy + nColdReward + nBudgetReward;
@@ -2041,6 +2056,18 @@ bool CChainState::ConnectBlock(const CBlock &block, CValidationState &state,
     LogPrint(BCLog::BENCH, "    - Callbacks: %.2fms [%.2fs (%.2fms/blk)]\n",
              MILLI * (nTime6 - nTime5), nTimeCallbacks * MICRO,
              nTimeCallbacks * MILLI / nBlocksTotal);
+
+    // Cold rewards [3D]: the block is now committed, so advance the paid candidate's clock (rewardKey
+    // was set by QuickValidate->CheckReward) and then track this block's new candidates / spends. These
+    // are the ONLY reward-state mutations on the connect path, staged for the atomic flush (3D.3). Only
+    // reached when !fJustCheck (the function returned earlier otherwise).
+    if (g_coldRewards) {
+        if (nColdReward > Amount::zero()) {
+            g_coldRewards->UpdateRewardsDB(consensusParams, pindex->nHeight);
+        }
+        g_coldRewards->UpdateWithBlock(consensusParams, block, pindex->nHeight);
+        g_coldRewards->SetBestBlock(pindex->GetBlockHash());
+    }
 
     return true;
 }

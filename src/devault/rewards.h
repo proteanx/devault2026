@@ -46,7 +46,8 @@ struct Params;
  */
 class CColdRewards {
 public:
-    CColdRewards(const Consensus::Params &consensusParams, CRewardsViewDB *prdb, bool fMainNetIn);
+    CColdRewards(const Consensus::Params &consensusParams, std::unique_ptr<CRewardsViewDB> prdb,
+                 bool fMainNetIn);
 
     //! Populate the in-memory map from the backing DB; returns the DB's recorded best block.
     bool Load(BlockHash &dbBestBlock) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
@@ -84,6 +85,14 @@ public:
 
     int32_t GetNumberOfCandidates() const { return nNumCandidates; }
 
+    //! Lightweight diagnostics (the getcoldrewardstats RPC + tests).
+    struct Stats {
+        int64_t records = 0; // total records held (active + recently-inactive)
+        int64_t active = 0;  // active candidates
+        BlockHash bestBlock; // block height the in-memory state corresponds to
+    };
+    Stats GetStats() const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
 private:
     void Setup(const Consensus::Params &consensusParams);
     //! Restore the paid clock of the candidate last paid at `Height` (reorg of a cold-reward payout).
@@ -95,7 +104,7 @@ private:
     void PutInMap(const COutPoint &op, const CRewardValue &val);
     void EraseFromMap(const COutPoint &op);
 
-    CRewardsViewDB *pdb;
+    std::unique_ptr<CRewardsViewDB> pdb;
     std::map<COutPoint, CRewardValue> rewardMap; // full in-memory state (active + recently-inactive)
     // Index of inactive (spent) records by their inactivation height, so the connect hook can prune
     // entries older than maxreorgdepth in O(pruned) instead of scanning the whole map every block.

@@ -16,6 +16,7 @@
 #include <consensus/abla.h>
 #include <consensus/activation.h>
 #include <consensus/validation.h>
+#include <devault/rewards.h>
 #include <core_io.h>
 #include <hash.h>
 #include <index/coinstatsindex.h>
@@ -215,6 +216,40 @@ static UniValue getblockcount(const Config &config,
 
     LOCK(cs_main);
     return ::ChainActive().Height();
+}
+
+static UniValue getcoldrewardstats(const Config &config,
+                                   const JSONRPCRequest &request) {
+    if (request.fHelp || request.params.size() != 0) {
+        throw std::runtime_error(
+            RPCHelpMan{"getcoldrewardstats",
+                "\nReturns diagnostics for the DeVault cold-reward engine state.\n", {}}
+                .ToString() +
+            "\nResult:\n"
+            "{\n"
+            "  \"enabled\": true|false,      (boolean) whether the cold-reward engine is active\n"
+            "  \"records\": n,               (numeric) total reward records (active + recently-inactive)\n"
+            "  \"active_candidates\": n,     (numeric) active reward candidates\n"
+            "  \"bestblock\": \"hash\"       (string) block the reward state corresponds to\n"
+            "}\n"
+            "\nExamples:\n" +
+            HelpExampleCli("getcoldrewardstats", "") +
+            HelpExampleRpc("getcoldrewardstats", ""));
+    }
+
+    LOCK(cs_main);
+    UniValue::Object obj;
+    if (!g_coldRewards) {
+        obj.emplace_back("enabled", false);
+        return obj;
+    }
+    const CColdRewards::Stats s = g_coldRewards->GetStats();
+    obj.reserve(4);
+    obj.emplace_back("enabled", true);
+    obj.emplace_back("records", s.records);
+    obj.emplace_back("active_candidates", s.active);
+    obj.emplace_back("bestblock", s.bestBlock.IsNull() ? std::string() : s.bestBlock.GetHex());
+    return obj;
 }
 
 static UniValue getbestblockhash(const Config &config,
@@ -3061,6 +3096,7 @@ static const ContextFreeRPCCommand commands[] = {
     { "blockchain",         "getblock",               getblock,               {"blockhash","verbosity|verbose","patterns"} },
     { "blockchain",         "getblockchaininfo",      getblockchaininfo,      {} },
     { "blockchain",         "getblockcount",          getblockcount,          {} },
+    { "blockchain",         "getcoldrewardstats",     getcoldrewardstats,     {} },
     { "blockchain",         "getblockhash",           getblockhash,           {"height"} },
     { "blockchain",         "getblockheader",         getblockheader,         {"blockhash|hash_or_height","verbose"} },
     { "blockchain",         "getblockstats",          getblockstats,          {"hash_or_height","stats"} },
