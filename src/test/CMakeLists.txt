@@ -207,6 +207,7 @@ add_boost_unit_tests_to_suite(bitcoin test_bitcoin
     arith_uint256_tests.cpp
     base32_tests.cpp
     base58_tests.cpp
+    coldrewards_tests.cpp
     base64_tests.cpp
     bigint_script_property_tests.cpp
     bigint_tests.cpp

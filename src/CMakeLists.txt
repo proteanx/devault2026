@@ -556,6 +556,9 @@ add_library(server
   consensus/tx_verify.cpp
   consensus/tx_check.cpp
   devault/budget.cpp
+  devault/rewards.cpp
+  devault/rewards_calculation.cpp
+  devault/rewardsview.cpp
   dsproof/dsproof.cpp
   dsproof/dsproof_create.cpp
   dsproof/dsproof_validate.cpp
