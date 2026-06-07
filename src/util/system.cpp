@@ -79,7 +79,7 @@
 // Application startup time (used for uptime calculation)
 const int64_t nStartupTime = GetTime();
 
-const char *const BITCOIN_CONF_FILENAME = "devault-v2.conf";
+const char *const BITCOIN_CONF_FILENAME = "devault.conf";
 
 ArgsManager gArgs;
 
@@ -791,17 +791,12 @@ void PrintExceptionContinue(const std::exception *pex, const char *pszThread) {
 }
 
 fs::path GetDefaultDataDir() {
-// DeVault V2 re-base: use a DEVAULT-V2-SPECIFIC default data directory so an accidental
-// run without -datadir can NEVER touch ~/.bitcoin (Bitcoin Core) or ~/.devault (the legacy
-// DeVault node — its synced chain and wallet). At production release this should change to
-// the legacy ~/.devault / "DeVault" path for a drop-in upgrade (Phase 2/3); during the
-// history-parity work it MUST stay distinct from both.
-// Windows: C:\Users\Username\AppData\Roaming\DeVault-V2
-// Mac:     ~/Library/Application Support/DeVault-V2
-// Unix:    ~/.devault-v2
+// Windows: C:\Users\Username\AppData\Roaming\DeVault
+// Mac:     ~/Library/Application Support/DeVault
+// Unix:    ~/.devault
 #ifdef WIN32
     // Windows
-    return GetSpecialFolderPath(CSIDL_APPDATA) / "DeVault-V2";
+    return GetSpecialFolderPath(CSIDL_APPDATA) / "DeVault";
 #else
     fs::path pathRet;
     char *pszHome = getenv("HOME");
@@ -812,10 +807,10 @@ fs::path GetDefaultDataDir() {
     }
 #ifdef MAC_OSX
     // Mac
-    return pathRet / "Library/Application Support/DeVault-V2";
+    return pathRet / "Library/Application Support/DeVault";
 #else
     // Unix
-    return pathRet / ".devault-v2";
+    return pathRet / ".devault";
 #endif
 #endif
 }
