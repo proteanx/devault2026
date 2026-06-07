@@ -3919,7 +3919,12 @@ static bool ContextualCheckBlock(const CBlock &block, CValidationState &state,
     // Start enforcing BIP113 (Median Time Past).
     int nLockTimeFlags = 0;
     if (nHeight >= params.CSVHeight) {
-        assert(pindexPrev != nullptr);
+        // DeVault activates CSV from genesis (CSVHeight == 0), so this branch is reached for the
+        // genesis block during -reindex (LoadExternalBlockFile -> AcceptBlock -> ContextualCheckBlock),
+        // where pindexPrev is null. Genesis legitimately has no parent — nMedianTimePast falls back to
+        // 0 below, which is correct. Upstream BCHN never reaches this for genesis because its CSVHeight
+        // is > 0; with CSVHeight == 0 the original assert aborts the reindex on the genesis block.
+        assert(pindexPrev != nullptr || nHeight == 0);
         nLockTimeFlags |= LOCKTIME_MEDIAN_TIME_PAST;
     }
 
